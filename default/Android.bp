@@ -1,0 +1,104 @@
+//
+// Copyright (C) 2026 The Project MiLahaina
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+soong_config_module_type {
+    name: "milahaina_facehal_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "milahaina_facehal",
+    bool_variables: ["enable_logging"],
+    properties: ["cflags"],
+}
+
+milahaina_facehal_cc_defaults {
+    name: "milahaina_facehal_logging_defaults",
+
+    cflags: [
+        "-include include/FaceHalLogGuard.h",
+        "-DMILAHAINA_FACEHAL_ENABLE_LOGGING=0",
+    ],
+
+    soong_config_variables: {
+        enable_logging: {
+            cflags: [
+                "-UMILAHAINA_FACEHAL_ENABLE_LOGGING",
+                "-DMILAHAINA_FACEHAL_ENABLE_LOGGING=1",
+            ],
+        },
+    },
+}
+
+cc_defaults {
+    name: "milahaina_face_shared_defaults",
+    shared_libs: [
+        "libbase",
+        "libbinder_ndk",
+        "libcrypto",
+        "liblog",
+        "libutils",
+        "libcutils",
+        "android.hardware.biometrics.face-V4-ndk",
+        "android.hardware.biometrics.common-V4-ndk",
+        "android.system.keystore2-V1-ndk",
+        "vendor.milahaina.biometrics.face-V2-ndk",
+        "libnativewindow",
+        "libmediandk",
+        "libcamera2ndk_vendor",
+        "libmilahaina_face_engine",
+    ],
+}
+
+cc_library_headers {
+    name: "libmilahaina_facehal_headers",
+    vendor: true,
+    export_include_dirs: ["include"],
+}
+
+cc_library_static {
+    name: "libmilahaina_facehal_core",
+    vendor: true,
+    defaults: [
+        "milahaina_facehal_logging_defaults",
+        "milahaina_face_shared_defaults",
+    ],
+    header_libs: ["libmilahaina_facehal_headers"],
+    export_header_lib_headers: ["libmilahaina_facehal_headers"],
+    srcs: [
+        "Face.cpp",
+        "Session.cpp",
+        "CancellationSignal.cpp",
+        "VisionServiceImpl.cpp",
+        "FaceStorageManager.cpp",
+        "FaceTemplateSerializer.cpp",
+        "CryptoClient.cpp",
+        "CameraClient.cpp",
+        "Camera2NdkBackend.cpp",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.biometrics.face-service.milahaina",
+    relative_install_path: "hw",
+    init_rc: ["face-hal-milahaina.rc"],
+    vintf_fragments: ["face-hal-milahaina.xml"],
+    vendor: true,
+    defaults: ["milahaina_face_shared_defaults"],
+    srcs: [
+        "service.cpp",
+    ],
+    static_libs: [
+        "libmilahaina_facehal_core",
+    ],
+}

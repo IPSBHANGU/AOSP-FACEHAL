@@ -1,0 +1,33 @@
+aidl_interface {
+    name: "vendor.milahaina.biometrics.face",
+    vendor_available: true,
+    srcs: [
+        "vendor/milahaina/biometrics/face/*.aidl",
+    ],
+    local_include_dir: ".",
+    stability: "vintf",
+    backend: {
+        java: {
+            sdk_version: "module_current",
+        },
+        cpp: {
+            enabled: true,
+        },
+        ndk: {
+            enabled: true,
+        },
+    },
+    versions_with_info: [
+        {
+            version: "1",
+            imports: [],
+        },
+        {
+            version: "2",
+            imports: [],
+        },
+
+    ],
+    frozen: true,
+
+}
