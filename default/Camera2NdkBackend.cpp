@@ -463,6 +463,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     mSessCb.onReady  = &Camera2NdkBackend::onSessionReady;
     mSessCb.onClosed = &Camera2NdkBackend::onSessionClosed;
 
+    mSessionClosed = false;
     cs = ACameraDevice_createCaptureSession(mDev, mOutC, &mSessCb, &mSess);
     if (cs != ACAMERA_OK || mSess == nullptr) {
         ALOGE("Camera2NdkBackend: createCaptureSession failed (%d)", cs);
@@ -565,6 +566,11 @@ void Camera2NdkBackend::teardown(std::unique_lock<std::mutex>& lock) {
     if (sess) {
         ACameraCaptureSession_stopRepeating(sess);
         ACameraCaptureSession_close(sess);
+
+        // Re-acquire lock to wait for onSessionClosed callback to prevent race/hang
+        lock.lock();
+        mCallbackCv.wait_for(lock, std::chrono::seconds(1), [this]() { return mSessionClosed; });
+        lock.unlock();
     }
     if (tgt) {
         ACameraOutputTarget_free(tgt);
@@ -713,6 +719,8 @@ void Camera2NdkBackend::onSessionClosed(void* ctx, ACameraCaptureSession* /*s*/)
         bool shouldStop = false;
         {
             std::lock_guard<std::mutex> lock(self->mLock);
+            self->mSessionClosed = true;
+            self->mCallbackCv.notify_all();
             if (self->mIsRunning && !self->mIsStopping) {
                 shouldStop = true;
             }
