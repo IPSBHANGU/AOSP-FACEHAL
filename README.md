@@ -425,6 +425,9 @@ Update the target compiler rules to build the custom source file (e.g. by commen
 cc_library_shared {
     name: "libmilahaina_face_engine",
     vendor: true,
+    defaults: [
+        "milahaina_facehal_logging_defaults",
+    ],
     header_libs: ["libmilahaina_facehal_headers"],
     export_header_lib_headers: ["libmilahaina_facehal_headers"],
     srcs: [

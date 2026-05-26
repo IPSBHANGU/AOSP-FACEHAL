@@ -17,6 +17,9 @@
 //cc_library_shared {
 //    name: "libmilahaina_face_engine",
 //    vendor: true,
+//    defaults: [
+//        "milahaina_facehal_logging_defaults",
+//    ],
 //    srcs: [
 //        "FaceEngineStub.cpp",
 //    ],

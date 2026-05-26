@@ -25,8 +25,19 @@ soong_config_module_type {
 milahaina_facehal_cc_defaults {
     name: "milahaina_facehal_logging_defaults",
 
+    header_libs: [
+        "libmilahaina_facehal_headers",
+    ],
+
+    shared_libs: [
+        "libbase",
+        "liblog",
+        "libcutils",
+        "libutils",
+    ],
+
     cflags: [
-        "-include include/FaceHalLogGuard.h",
+        "-include FaceHalLogGuard.h",
         "-DMILAHAINA_FACEHAL_ENABLE_LOGGING=0",
     ],
 
@@ -94,7 +105,10 @@ cc_binary {
     init_rc: ["face-hal-milahaina.rc"],
     vintf_fragments: ["face-hal-milahaina.xml"],
     vendor: true,
-    defaults: ["milahaina_face_shared_defaults"],
+    defaults: [
+        "milahaina_facehal_logging_defaults",
+        "milahaina_face_shared_defaults",
+    ],
     srcs: [
         "service.cpp",
     ],

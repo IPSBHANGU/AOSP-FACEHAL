@@ -6,6 +6,15 @@
 #endif
 
 #if !MILAHAINA_FACEHAL_ENABLE_LOGGING
+
+// Include standard log headers first to set their header guards
+// and prevent them from overriding our macro definitions later.
+#include <log/log.h>
+#include <android/log.h>
+#include <android-base/logging.h>
+#include <utils/Log.h>
+#include <cutils/log.h>
+
 namespace org::milahaina::face::hal::logging {
 class NullLogMessage {
  public:
@@ -50,4 +59,25 @@ class NullLogMessage {
 #undef ALOGF
 #endif
 #define ALOGF(...) ((void)0)
+
+// Direct liblog functions
+#ifdef __android_log_print
+#undef __android_log_print
+#endif
+#define __android_log_print(...) ((int)0)
+
+#ifdef __android_log_write
+#undef __android_log_write
+#endif
+#define __android_log_write(...) ((int)0)
+
+#ifdef __android_log_buf_write
+#undef __android_log_buf_write
+#endif
+#define __android_log_buf_write(...) ((int)0)
+
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif
+
 #endif
