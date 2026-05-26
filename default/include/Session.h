@@ -103,11 +103,9 @@ private:
     int onCameraFrame(const std::vector<uint8_t>& frame, int width, int height, int angle);
     void postCallback(std::function<void()> task);
 
-    std::mutex mCallbackLock;
-    std::condition_variable mCallbackCv;
-    std::queue<std::function<void()>> mCallbackQueue;
+    struct SessionCallbackQueue;
+    std::shared_ptr<SessionCallbackQueue> mCallbackQueueState;
     std::thread mCallbackWorker;
-    bool mCallbackWorkerRunning = false;
 };
 
 }  // namespace hal

@@ -37,6 +37,13 @@ using aidl::android::hardware::biometrics::face::AuthenticationFrame;
 using aidl::android::hardware::biometrics::face::EnrollmentFrame;
 using aidl::android::hardware::biometrics::face::Error;
 
+struct Session::SessionCallbackQueue {
+    std::mutex lock;
+    std::condition_variable cv;
+    std::queue<std::function<void()>> queue;
+    bool running = true;
+};
+
 Session::Session(int32_t userId, const std::shared_ptr<ISessionCallback> &cb)
     : mUserId(userId), mCb(cb), mEngine(FaceEngine::getInstance()),
       mCryptoClient(CryptoClient::getInstance()), mCameraClient(std::make_shared<CameraClient>()),
@@ -52,18 +59,18 @@ Session::Session(int32_t userId, const std::shared_ptr<ISessionCallback> &cb)
     return this->onCameraFrame(frame, width, height, angle);
   });
 
-  mCallbackWorkerRunning = true;
-  mCallbackWorker = std::thread([this]() {
+  mCallbackQueueState = std::make_shared<SessionCallbackQueue>();
+  mCallbackWorker = std::thread([state = mCallbackQueueState]() {
       while (true) {
           std::function<void()> task;
           {
-              std::unique_lock<std::mutex> lock(mCallbackLock);
-              mCallbackCv.wait(lock, [this]() { return !mCallbackWorkerRunning || !mCallbackQueue.empty(); });
-              if (!mCallbackWorkerRunning && mCallbackQueue.empty()) {
+              std::unique_lock<std::mutex> lock(state->lock);
+              state->cv.wait(lock, [state]() { return !state->running || !state->queue.empty(); });
+              if (!state->running && state->queue.empty()) {
                   break;
               }
-              task = std::move(mCallbackQueue.front());
-              mCallbackQueue.pop();
+              task = std::move(state->queue.front());
+              state->queue.pop();
           }
           if (task) {
               task();
@@ -76,13 +83,13 @@ Session::~Session() {
   mEngine.setSessionFrameCallback(nullptr);
   cancel();
 
-  {
-      std::lock_guard<std::mutex> lock(mCallbackLock);
-      mCallbackWorkerRunning = false;
-      mCallbackCv.notify_all();
+  if (mCallbackQueueState) {
+      std::lock_guard<std::mutex> lock(mCallbackQueueState->lock);
+      mCallbackQueueState->running = false;
+      mCallbackQueueState->cv.notify_all();
   }
   if (mCallbackWorker.joinable()) {
-      mCallbackWorker.join();
+      mCallbackWorker.detach();
   }
 }
 
@@ -366,10 +373,12 @@ ScopedAStatus Session::onContextChanged(const OperationContext &context) {
 }
 
 void Session::postCallback(std::function<void()> task) {
-  std::lock_guard<std::mutex> lock(mCallbackLock);
-  if (mCallbackWorkerRunning) {
-    mCallbackQueue.push(std::move(task));
-    mCallbackCv.notify_all();
+  if (mCallbackQueueState) {
+    std::lock_guard<std::mutex> lock(mCallbackQueueState->lock);
+    if (mCallbackQueueState->running) {
+      mCallbackQueueState->queue.push(std::move(task));
+      mCallbackQueueState->cv.notify_all();
+    }
   }
 }
 
