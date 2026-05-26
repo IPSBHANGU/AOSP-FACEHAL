@@ -223,8 +223,8 @@ ScopedAStatus Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_
 
     bool started = mCameraClient->start([this](const std::vector<uint8_t> &frame,
                                            int width, int height,
-                                           int angle) -> int {
-      return this->onCameraFrame(frame, width, height, angle);
+                                           int angle) {
+      mEngine.onCameraFrame(frame, width, height, angle);
     });
     LOG(INFO) << "Session::detectInteraction CameraClient->start returned " << started;
     if (!started) {

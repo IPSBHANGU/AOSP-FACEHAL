@@ -39,7 +39,7 @@ public:
 private:
     bool waitForNonEmptyCameraList(int timeoutMs);
     bool selectFrontCamera(std::string& outId);
-    void teardown();
+    void teardown(std::unique_lock<std::mutex>& lock);
     void noteFailure(int vendorCode);  // VendorCode::CAMERA_* from FaceEngine.h
 
     static void onImageAvailable(void* ctx, AImageReader* reader);

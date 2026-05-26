@@ -319,7 +319,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (!mMgr) {
         ALOGE("Camera2NdkBackend: ACameraManager_create failed");
         noteFailure(VendorCode::CAMERA_MANAGER_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -337,13 +337,13 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
             ALOGE("Camera2NdkBackend: no cameras reported after wait (see SELinux "
                   "hal_client_domain / binder_call for hal_camera vs hal_camera_default)");
             noteFailure(VendorCode::CAMERA_NO_DEVICE);
-            teardown();
+            teardown(lock);
             return false;
         }
         if (!selectFrontCamera(mCameraId) || mCameraId.empty()) {
             ALOGE("Camera2NdkBackend: no camera matching desired facing");
             noteFailure(VendorCode::CAMERA_ID_SELECT_FAILED);
-            teardown();
+            teardown(lock);
             return false;
         }
     } else {
@@ -376,7 +376,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
         if (mst != AMEDIA_OK || mRdr == nullptr) {
             ALOGE("Camera2NdkBackend: AImageReader_new failed (%d)", mst);
             noteFailure(VendorCode::CAMERA_IMAGE_READER_FAILED);
-            teardown();
+            teardown(lock);
             return false;
         }
 
@@ -391,7 +391,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
             AImageReader_delete(mRdr);
             mRdr = nullptr;
             mWin = nullptr;
-            teardown();
+            teardown(lock);
             return false;
         }
 
@@ -416,19 +416,19 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
             usedWarmId = false;
             if (!waitForNonEmptyCameraList(/*timeoutMs=*/8000)) {
                 noteFailure(VendorCode::CAMERA_NO_DEVICE);
-                teardown();
+                teardown(lock);
                 return false;
             }
             if (!selectFrontCamera(mCameraId) || mCameraId.empty()) {
                 noteFailure(VendorCode::CAMERA_ID_SELECT_FAILED);
-                teardown();
+                teardown(lock);
                 return false;
             }
             mFrameAngle = GetPreviewRotationDegrees(mMgr, mCameraId);
             continue;
         }
         noteFailure(VendorCode::CAMERA_OPEN_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -438,7 +438,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: ACaptureSessionOutput_create failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_SESSION_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -446,14 +446,14 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: ACaptureSessionOutputContainer_create failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_SESSION_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
     cs = ACaptureSessionOutputContainer_add(mOutC, mOut);
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: ACaptureSessionOutputContainer_add failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_SESSION_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -467,7 +467,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK || mSess == nullptr) {
         ALOGE("Camera2NdkBackend: createCaptureSession failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_SESSION_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -475,7 +475,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK || mReq == nullptr) {
         ALOGE("Camera2NdkBackend: createCaptureRequest failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_REQUEST_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -483,14 +483,14 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: ACameraOutputTarget_create failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_REQUEST_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
     cs = ACaptureRequest_addTarget(mReq, mTgt);
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: ACaptureRequest_addTarget failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_REQUEST_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -500,7 +500,7 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
     if (cs != ACAMERA_OK) {
         ALOGE("Camera2NdkBackend: setRepeatingRequest failed (%d)", cs);
         noteFailure(VendorCode::CAMERA_STREAMING_FAILED);
-        teardown();
+        teardown(lock);
         return false;
     }
 
@@ -511,7 +511,6 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
 
 void Camera2NdkBackend::stop() {
     std::unique_lock<std::mutex> lock(mLock);
-
     if (!mIsRunning && !mIsStopping && mMgr == nullptr) return;
 
     if (mIsStopping) {
@@ -526,7 +525,8 @@ void Camera2NdkBackend::stop() {
         ALOGI("Camera2NdkBackend: stop() called from callback thread. Deferring teardown.");
         std::thread([this]() {
             std::unique_lock<std::mutex> lock(mLock);
-            teardown();
+            mCallbackCv.wait(lock, [this]() { return !mInCallback; });
+            teardown(lock);
             mIsStopping = false;
             mCallbackCv.notify_all();
         }).detach();
@@ -534,47 +534,63 @@ void Camera2NdkBackend::stop() {
     }
 
     mCallbackCv.wait(lock, [this]() { return !mInCallback; });
-    teardown();
+    teardown(lock);
     mIsStopping = false;
     mCallbackCv.notify_all();
 }
 
-void Camera2NdkBackend::teardown() {
-    if (mSess) {
-        ACameraCaptureSession_stopRepeating(mSess);
-        ACameraCaptureSession_close(mSess);
-        mSess = nullptr;
+void Camera2NdkBackend::teardown(std::unique_lock<std::mutex>& lock) {
+    ACameraCaptureSession* sess = mSess;
+    ACameraOutputTarget* tgt = mTgt;
+    ACaptureRequest* req = mReq;
+    ACaptureSessionOutputContainer* outC = mOutC;
+    ACaptureSessionOutput* out = mOut;
+    ACameraDevice* dev = mDev;
+    AImageReader* rdr = mRdr;
+    ACameraManager* mgr = mMgr;
+
+    mSess = nullptr;
+    mTgt = nullptr;
+    mReq = nullptr;
+    mOutC = nullptr;
+    mOut = nullptr;
+    mDev = nullptr;
+    mRdr = nullptr;
+    mWin = nullptr;
+    mMgr = nullptr;
+
+    // Unlock to perform blocking/synchronous close calls outside the lock
+    lock.unlock();
+
+    if (sess) {
+        ACameraCaptureSession_stopRepeating(sess);
+        ACameraCaptureSession_close(sess);
     }
-    if (mTgt) {
-        ACameraOutputTarget_free(mTgt);
-        mTgt = nullptr;
+    if (tgt) {
+        ACameraOutputTarget_free(tgt);
     }
-    if (mReq) {
-        ACaptureRequest_free(mReq);
-        mReq = nullptr;
+    if (req) {
+        ACaptureRequest_free(req);
     }
-    if (mOutC) {
-        ACaptureSessionOutputContainer_free(mOutC);
-        mOutC = nullptr;
+    if (outC) {
+        ACaptureSessionOutputContainer_free(outC);
     }
-    if (mOut) {
-        ACaptureSessionOutput_free(mOut);
-        mOut = nullptr;
+    if (out) {
+        ACaptureSessionOutput_free(out);
     }
-    if (mDev) {
-        ACameraDevice_close(mDev);
-        mDev = nullptr;
+    if (dev) {
+        ACameraDevice_close(dev);
     }
-    if (mRdr) {
-        AImageReader_setImageListener(mRdr, nullptr);
-        AImageReader_delete(mRdr);
-        mRdr = nullptr;
-        mWin = nullptr;  // owned by mRdr
+    if (rdr) {
+        AImageReader_setImageListener(rdr, nullptr);
+        AImageReader_delete(rdr);
     }
-    if (mMgr) {
-        ACameraManager_delete(mMgr);
-        mMgr = nullptr;
+    if (mgr) {
+        ACameraManager_delete(mgr);
     }
+
+    // Re-acquire lock to restore expected locking state for caller
+    lock.lock();
 }
 
 bool Camera2NdkBackend::waitForNonEmptyCameraList(int timeoutMs) {
