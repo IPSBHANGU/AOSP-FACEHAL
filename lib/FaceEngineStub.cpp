@@ -166,6 +166,15 @@ int FaceEngine::getEnrollmentCount(int userId) {
     return static_cast<int>(mImpl->enrolledEmbeddings.size());
 }
 
+std::vector<int32_t> FaceEngine::getEnrolledFaceIds(int userId) {
+    std::lock_guard<std::mutex> lock(mImpl->enrollmentMutex);
+    std::vector<int32_t> ids;
+    for (const auto &[faceId, _] : mImpl->enrolledEmbeddings) {
+        ids.push_back(faceId);
+    }
+    return ids;
+}
+
 bool FaceEngine::restoreEnrollments(int userId) {
     LOG(INFO) << "Stub restoring enrollments for user " << userId;
     if (!mImpl->mCallbacks.loadTemplates) {

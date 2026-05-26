@@ -306,7 +306,10 @@ int Camera2NdkBackend::lastStartFailureVendorCode() const {
 }
 
 bool Camera2NdkBackend::start(FrameCallback cb) {
-    std::lock_guard<std::mutex> lock(mLock);
+    std::unique_lock<std::mutex> lock(mLock);
+    if (mIsStopping) {
+        mCallbackCv.wait(lock, [this]() { return !mIsStopping; });
+    }
     if (mIsRunning) return true;
 
     mCallback = cb;
@@ -508,20 +511,32 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
 
 void Camera2NdkBackend::stop() {
     std::unique_lock<std::mutex> lock(mLock);
-    if (!mIsRunning && mMgr == nullptr) return;
+
+    if (!mIsRunning && !mIsStopping && mMgr == nullptr) return;
+
+    if (mIsStopping) {
+        mCallbackCv.wait(lock, [this]() { return !mIsStopping; });
+        return;
+    }
+
     mIsRunning = false;
+    mIsStopping = true;
 
     if (mInCallback && std::this_thread::get_id() == mCallbackThreadId) {
         ALOGI("Camera2NdkBackend: stop() called from callback thread. Deferring teardown.");
         std::thread([this]() {
-            std::lock_guard<std::mutex> lock(mLock);
+            std::unique_lock<std::mutex> lock(mLock);
             teardown();
+            mIsStopping = false;
+            mCallbackCv.notify_all();
         }).detach();
         return;
     }
 
     mCallbackCv.wait(lock, [this]() { return !mInCallback; });
     teardown();
+    mIsStopping = false;
+    mCallbackCv.notify_all();
 }
 
 void Camera2NdkBackend::teardown() {
@@ -574,6 +589,28 @@ void Camera2NdkBackend::onImageAvailable(void* ctx, AImageReader* reader) {
     auto* self = static_cast<Camera2NdkBackend*>(ctx);
     if (!self) return;
 
+    {
+        std::lock_guard<std::mutex> lock(self->mLock);
+        if (!self->mIsRunning) {
+            return;
+        }
+    }
+
+    struct CallbackGuard {
+        Camera2NdkBackend* self;
+        CallbackGuard(Camera2NdkBackend* s) : self(s) {
+            std::lock_guard<std::mutex> lock(self->mLock);
+            self->mInCallback = true;
+            self->mCallbackThreadId = std::this_thread::get_id();
+        }
+        ~CallbackGuard() {
+            std::lock_guard<std::mutex> lock(self->mLock);
+            self->mInCallback = false;
+            self->mCallbackThreadId = std::thread::id();
+            self->mCallbackCv.notify_all();
+        }
+    } guard(self);
+
     AImage* img = nullptr;
     media_status_t mst = AImageReader_acquireLatestImage(reader, &img);
     if (mst != AMEDIA_OK || img == nullptr) {
@@ -596,8 +633,6 @@ void Camera2NdkBackend::onImageAvailable(void* ctx, AImageReader* reader) {
         if (!self->mIsRunning || !self->mCallback) {
             return;
         }
-        self->mInCallback = true;
-        self->mCallbackThreadId = std::this_thread::get_id();
         cb = self->mCallback;
         angle = self->mFrameAngle;
     }
@@ -609,13 +644,6 @@ void Camera2NdkBackend::onImageAvailable(void* ctx, AImageReader* reader) {
     }
 
     cb(frame, w, h, angle);
-
-    {
-        std::lock_guard<std::mutex> lock(self->mLock);
-        self->mInCallback = false;
-        self->mCallbackThreadId = std::thread::id();
-        self->mCallbackCv.notify_all();
-    }
 }
 
 void Camera2NdkBackend::onDeviceDisconnected(void* ctx, ACameraDevice* dev) {

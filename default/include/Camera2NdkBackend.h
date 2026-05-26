@@ -77,6 +77,7 @@ private:
 
     std::condition_variable mCallbackCv;
     bool mInCallback = false;
+    bool mIsStopping = false;
     std::thread::id mCallbackThreadId;
 };
 

@@ -52,6 +52,7 @@ public:
   int deleteEnrollment(int userId, int faceId);
 
   int getEnrollmentCount(int userId);
+  std::vector<int32_t> getEnrolledFaceIds(int userId);
 
   int getEnrollmentProgress() {
     return (mEnrollFrameCount * 100) / ENROLL_REQUIRED_GOOD_FRAMES;

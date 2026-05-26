@@ -25,12 +25,14 @@ namespace milahaina {
 namespace face {
 namespace hal {
 
-CancellationSignal::CancellationSignal(Session *session) : mSession(session) {}
+CancellationSignal::CancellationSignal(const std::shared_ptr<Session> &session) : mSession(session) {}
 
 ScopedAStatus CancellationSignal::cancel() {
   LOG(INFO) << "cancel operation";
-  if (mSession) {
-    mSession->cancel();
+  if (auto session = mSession.lock()) {
+    session->cancel();
+  } else {
+    LOG(WARNING) << "Session already destroyed, ignoring cancel";
   }
   return ScopedAStatus::ok();
 }

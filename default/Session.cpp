@@ -183,7 +183,7 @@ Session::enroll(const HardwareAuthToken & /*hat*/, EnrollmentType type,
     LOG(ERROR) << "Session::enroll camera failed, onError VENDOR vendorCode=" << v;
   }
 
-  *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(this);
+  *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(ref<Session>());
   return ScopedAStatus::ok();
 }
 
@@ -213,7 +213,7 @@ ScopedAStatus Session::authenticate(int64_t operationId,
       LOG(ERROR) << "Session::authenticate camera failed, onError VENDOR vendorCode=" << v;
     }
 
-    *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(this);
+    *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(ref<Session>());
     return ScopedAStatus::ok();
 }
 
@@ -235,15 +235,12 @@ ScopedAStatus Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_
       LOG(ERROR) << "Session::detectInteraction camera failed, onError VENDOR vendorCode=" << v;
     }
 
-    *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(this);
+    *_aidl_return = ndk::SharedRefBase::make<CancellationSignal>(ref<Session>());
     return ScopedAStatus::ok();
 }
 
 ScopedAStatus Session::enumerateEnrollments(void) {
-  int count = mEngine.getEnrollmentCount(mUserId);
-  std::vector<int32_t> enrollments;
-  if (count > 0)
-    enrollments.push_back(1);
+  std::vector<int32_t> enrollments = mEngine.getEnrolledFaceIds(mUserId);
   mCb->onEnrollmentsEnumerated(enrollments);
   return ScopedAStatus::ok();
 }

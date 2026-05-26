@@ -392,6 +392,15 @@ int FaceEngine::getEnrollmentCount(int userId) {
     return mImpl->enrolledEmbeddings.size();
 }
 
+std::vector<int32_t> FaceEngine::getEnrolledFaceIds(int userId) {
+    std::lock_guard<std::mutex> lock(mImpl->enrollmentMutex);
+    std::vector<int32_t> ids;
+    for (const auto &[faceId, _] : mImpl->enrolledEmbeddings) {
+        ids.push_back(faceId);
+    }
+    return ids;
+}
+
 std::vector<float> FaceEngine::getLastLandmarks() {
     return {};
 }

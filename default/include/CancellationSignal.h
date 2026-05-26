@@ -17,6 +17,7 @@
 #pragma once
 
 #include <aidl/android/hardware/biometrics/common/BnCancellationSignal.h>
+#include <memory>
 
 namespace org {
 namespace milahaina {
@@ -30,10 +31,10 @@ class Session; // Forward declaration
 
 class CancellationSignal : public BnCancellationSignal {
 public:
-    explicit CancellationSignal(Session* session);
+    explicit CancellationSignal(const std::shared_ptr<Session>& session);
     ScopedAStatus cancel() override;
 private:
-    Session* mSession;
+    std::weak_ptr<Session> mSession;
 };
 
 }  // namespace hal
