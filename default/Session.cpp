@@ -51,11 +51,39 @@ Session::Session(int32_t userId, const std::shared_ptr<ISessionCallback> &cb)
                                          int angle) -> int {
     return this->onCameraFrame(frame, width, height, angle);
   });
+
+  mCallbackWorkerRunning = true;
+  mCallbackWorker = std::thread([this]() {
+      while (true) {
+          std::function<void()> task;
+          {
+              std::unique_lock<std::mutex> lock(mCallbackLock);
+              mCallbackCv.wait(lock, [this]() { return !mCallbackWorkerRunning || !mCallbackQueue.empty(); });
+              if (!mCallbackWorkerRunning && mCallbackQueue.empty()) {
+                  break;
+              }
+              task = std::move(mCallbackQueue.front());
+              mCallbackQueue.pop();
+          }
+          if (task) {
+              task();
+          }
+      }
+  });
 }
 
 Session::~Session() {
   mEngine.setSessionFrameCallback(nullptr);
   cancel();
+
+  {
+      std::lock_guard<std::mutex> lock(mCallbackLock);
+      mCallbackWorkerRunning = false;
+      mCallbackCv.notify_all();
+  }
+  if (mCallbackWorker.joinable()) {
+      mCallbackWorker.join();
+  }
 }
 
 void Session::cancel() {
@@ -86,16 +114,22 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
       mIsAuthenticating = false;
       mCameraClient->stop();
       HardwareAuthToken hat;
-      mCb->onAuthenticationSucceeded(matchedFaceId, hat);
+      postCallback([cb = mCb, matchedFaceId, hat]() {
+          cb->onAuthenticationSucceeded(matchedFaceId, hat);
+      });
     } else if (res > 0) {
       // No match
       if (res != VendorCode::KEEP) {
-        mCb->onAuthenticationFailed();
+        postCallback([cb = mCb]() {
+            cb->onAuthenticationFailed();
+        });
       }
       AuthenticationFrame authFrame;
       authFrame.data.acquiredInfo = AcquiredInfo::VENDOR;
       authFrame.data.vendorCode = res;
-      mCb->onAuthenticationFrame(authFrame);
+      postCallback([cb = mCb, authFrame]() {
+          cb->onAuthenticationFrame(authFrame);
+      });
     }
     return res;
   } else if (mIsDetectingInteraction) {
@@ -104,7 +138,9 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
     if (res == VendorCode::FACE_OK) {
       mIsDetectingInteraction = false;
       mCameraClient->stop();
-      mCb->onInteractionDetected();
+      postCallback([cb = mCb]() {
+          cb->onInteractionDetected();
+      });
     }
     return res;
   } else if (mIsEnrolling) {
@@ -121,16 +157,22 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
       // Enrollment finished successfully
       mIsEnrolling = false;
       mCameraClient->stop();
-      mCb->onEnrollmentProgress(outFaceId, 0);
+      postCallback([cb = mCb, outFaceId]() {
+          cb->onEnrollmentProgress(outFaceId, 0);
+      });
     } else if (res == VendorCode::KEEP) {
       // Good frame, need more. Report progress.
-      mCb->onEnrollmentProgress(outFaceId, remaining);
+      postCallback([cb = mCb, outFaceId, remaining]() {
+          cb->onEnrollmentProgress(outFaceId, remaining);
+      });
     } else {
       // Bad quality or error — report vendor code for UI feedback
       EnrollmentFrame enrollFrame;
       enrollFrame.data.acquiredInfo = AcquiredInfo::VENDOR;
       enrollFrame.data.vendorCode = res;
-      mCb->onEnrollmentFrame(enrollFrame);
+      postCallback([cb = mCb, enrollFrame]() {
+          cb->onEnrollmentFrame(enrollFrame);
+      });
     }
     return res;
   }
@@ -200,7 +242,6 @@ ScopedAStatus Session::authenticate(int64_t operationId,
               << " operationId=" << operationId;
     mIsAuthenticating = true;
 
-    // Route through FaceEngine so App IVisionService preview gets frames too.
     bool started = mCameraClient->start([this](const std::vector<uint8_t>& frame, int width, int height, int angle) {
         mEngine.onCameraFrame(frame, width, height, angle);
     });
@@ -217,14 +258,13 @@ ScopedAStatus Session::authenticate(int64_t operationId,
     return ScopedAStatus::ok();
 }
 
-ScopedAStatus Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_aidl_return) {
+ScopedAStatus
+Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_aidl_return) {
     LOG(INFO) << "Session::detectInteraction";
     mIsDetectingInteraction = true;
 
-    bool started = mCameraClient->start([this](const std::vector<uint8_t> &frame,
-                                           int width, int height,
-                                           int angle) {
-      mEngine.onCameraFrame(frame, width, height, angle);
+    bool started = mCameraClient->start([this](const std::vector<uint8_t>& frame, int width, int height, int angle) {
+        mEngine.onCameraFrame(frame, width, height, angle);
     });
     LOG(INFO) << "Session::detectInteraction CameraClient->start returned " << started;
     if (!started) {
@@ -323,6 +363,14 @@ ScopedAStatus Session::onContextChanged(const OperationContext &context) {
   LOG(INFO) << "Session::onContextChanged: reason=" << (int)context.reason
             << ", displayState=" << (int)context.displayState;
   return ScopedAStatus::ok();
+}
+
+void Session::postCallback(std::function<void()> task) {
+  std::lock_guard<std::mutex> lock(mCallbackLock);
+  if (mCallbackWorkerRunning) {
+    mCallbackQueue.push(std::move(task));
+    mCallbackCv.notify_all();
+  }
 }
 
 } // namespace hal

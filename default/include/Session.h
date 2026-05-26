@@ -25,6 +25,12 @@
 #include "CryptoClient.h"
 #include "CameraClient.h"
 
+#include <queue>
+#include <functional>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 namespace org {
 namespace milahaina {
 namespace face {
@@ -95,6 +101,13 @@ private:
     uint64_t mCurrentChallenge;
 
     int onCameraFrame(const std::vector<uint8_t>& frame, int width, int height, int angle);
+    void postCallback(std::function<void()> task);
+
+    std::mutex mCallbackLock;
+    std::condition_variable mCallbackCv;
+    std::queue<std::function<void()>> mCallbackQueue;
+    std::thread mCallbackWorker;
+    bool mCallbackWorkerRunning = false;
 };
 
 }  // namespace hal
