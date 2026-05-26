@@ -95,7 +95,9 @@ Session::~Session() {
 
 void Session::cancel() {
   if (mIsAuthenticating || mIsEnrolling || mIsDetectingInteraction) {
-    mCb->onError(Error::CANCELED, 0);
+    postCallback([cb = mCb]() {
+        cb->onError(Error::CANCELED, 0);
+    });
   }
   mIsAuthenticating = false;
   mIsEnrolling = false;
@@ -190,14 +192,20 @@ ScopedAStatus Session::generateChallenge(void) {
   mCurrentChallenge = mCryptoClient->generateChallenge();
 
   if (mCb != nullptr) {
-    mCb->onChallengeGenerated(mCurrentChallenge);
+    postCallback([cb = mCb, challenge = mCurrentChallenge]() {
+        cb->onChallengeGenerated(challenge);
+    });
   }
 
   return ScopedAStatus::ok();
 }
 
 ScopedAStatus Session::revokeChallenge(int64_t challenge) {
-  mCb->onChallengeRevoked(challenge);
+  if (mCb != nullptr) {
+    postCallback([cb = mCb, challenge]() {
+        cb->onChallengeRevoked(challenge);
+    });
+  }
   return ScopedAStatus::ok();
 }
 
@@ -228,7 +236,9 @@ Session::enroll(const HardwareAuthToken & /*hat*/, EnrollmentType type,
     int32_t v = static_cast<int32_t>(mCameraClient->lastStartFailureVendorCode());
     if (v == 0) v = VendorCode::CAMERA_NO_DEVICE;
     mIsEnrolling = false;
-    mCb->onError(Error::VENDOR, v);
+    postCallback([cb = mCb, v]() {
+        cb->onError(Error::VENDOR, v);
+    });
     LOG(ERROR) << "Session::enroll camera failed, onError VENDOR vendorCode=" << v;
   }
 
@@ -257,7 +267,9 @@ ScopedAStatus Session::authenticate(int64_t operationId,
       int32_t v = static_cast<int32_t>(mCameraClient->lastStartFailureVendorCode());
       if (v == 0) v = VendorCode::CAMERA_NO_DEVICE;
       mIsAuthenticating = false;
-      mCb->onError(Error::VENDOR, v);
+      postCallback([cb = mCb, v]() {
+          cb->onError(Error::VENDOR, v);
+      });
       LOG(ERROR) << "Session::authenticate camera failed, onError VENDOR vendorCode=" << v;
     }
 
@@ -278,7 +290,9 @@ Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_aidl_return) {
       int32_t v = static_cast<int32_t>(mCameraClient->lastStartFailureVendorCode());
       if (v == 0) v = VendorCode::CAMERA_NO_DEVICE;
       mIsDetectingInteraction = false;
-      mCb->onError(Error::VENDOR, v);
+      postCallback([cb = mCb, v]() {
+          cb->onError(Error::VENDOR, v);
+      });
       LOG(ERROR) << "Session::detectInteraction camera failed, onError VENDOR vendorCode=" << v;
     }
 
@@ -288,7 +302,9 @@ Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_aidl_return) {
 
 ScopedAStatus Session::enumerateEnrollments(void) {
   std::vector<int32_t> enrollments = mEngine.getEnrolledFaceIds(mUserId);
-  mCb->onEnrollmentsEnumerated(enrollments);
+  postCallback([cb = mCb, enrollments]() {
+      cb->onEnrollmentsEnumerated(enrollments);
+  });
   return ScopedAStatus::ok();
 }
 
@@ -297,7 +313,9 @@ Session::removeEnrollments(const std::vector<int32_t> &enrollmentIds) {
   for (int32_t id : enrollmentIds) {
     mEngine.deleteEnrollment(mUserId, id);
   }
-  mCb->onEnrollmentsRemoved(enrollmentIds);
+  postCallback([cb = mCb, enrollmentIds]() {
+      cb->onEnrollmentsRemoved(enrollmentIds);
+  });
   return ScopedAStatus::ok();
 }
 
@@ -309,7 +327,9 @@ ScopedAStatus Session::getFeatures() {
   if (mEngine.getRequireDiversePoses()) {
       features.push_back(Feature::REQUIRE_DIVERSE_POSES);
   }
-  mCb->onFeaturesRetrieved(features);
+  postCallback([cb = mCb, features]() {
+      cb->onFeaturesRetrieved(features);
+  });
   return ScopedAStatus::ok();
 }
 
@@ -326,7 +346,9 @@ ScopedAStatus Session::setFeature(const HardwareAuthToken &hat, Feature feature,
 }
 
 ScopedAStatus Session::getAuthenticatorId(void) {
-  mCb->onAuthenticatorIdRetrieved(0);
+  postCallback([cb = mCb]() {
+      cb->onAuthenticatorIdRetrieved(0);
+  });
   return ScopedAStatus::ok();
 }
 
@@ -335,13 +357,17 @@ ScopedAStatus Session::invalidateAuthenticatorId(void) {
 }
 
 ScopedAStatus Session::resetLockout(const HardwareAuthToken &hat) {
-  mCb->onLockoutCleared();
+  postCallback([cb = mCb]() {
+      cb->onLockoutCleared();
+  });
   return ScopedAStatus::ok();
 }
 
 ScopedAStatus Session::close(void) {
   cancel();
-  mCb->onSessionClosed();
+  postCallback([cb = mCb]() {
+      cb->onSessionClosed();
+  });
   return ScopedAStatus::ok();
 }
 
