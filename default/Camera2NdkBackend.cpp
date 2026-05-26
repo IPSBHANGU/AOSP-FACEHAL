@@ -371,8 +371,8 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
 
     for (int openAttempt = 0;; ++openAttempt) {
         media_status_t mst = AImageReader_new(mWidth, mHeight,
-                                              AIMAGE_FORMAT_YUV_420_888,
-                                              /*maxImages=*/4, &mRdr);
+                                               AIMAGE_FORMAT_YUV_420_888,
+                                               /*maxImages=*/4, &mRdr);
         if (mst != AMEDIA_OK || mRdr == nullptr) {
             ALOGE("Camera2NdkBackend: AImageReader_new failed (%d)", mst);
             noteFailure(VendorCode::CAMERA_IMAGE_READER_FAILED);
@@ -667,7 +667,16 @@ void Camera2NdkBackend::onDeviceDisconnected(void* ctx, ACameraDevice* dev) {
           dev ? ACameraDevice_getId(dev) : "?");
     auto* self = static_cast<Camera2NdkBackend*>(ctx);
     if (self) {
-        self->stop();
+        bool shouldStop = false;
+        {
+            std::lock_guard<std::mutex> lock(self->mLock);
+            if (self->mIsRunning && !self->mIsStopping) {
+                shouldStop = true;
+            }
+        }
+        if (shouldStop) {
+            self->stop();
+        }
     }
 }
 
@@ -676,7 +685,16 @@ void Camera2NdkBackend::onDeviceError(void* ctx, ACameraDevice* dev, int err) {
           dev ? ACameraDevice_getId(dev) : "?", err);
     auto* self = static_cast<Camera2NdkBackend*>(ctx);
     if (self) {
-        self->stop();
+        bool shouldStop = false;
+        {
+            std::lock_guard<std::mutex> lock(self->mLock);
+            if (self->mIsRunning && !self->mIsStopping) {
+                shouldStop = true;
+            }
+        }
+        if (shouldStop) {
+            self->stop();
+        }
     }
 }
 
@@ -692,7 +710,16 @@ void Camera2NdkBackend::onSessionClosed(void* ctx, ACameraCaptureSession* /*s*/)
     ALOGI("Camera2NdkBackend: session CLOSED");
     auto* self = static_cast<Camera2NdkBackend*>(ctx);
     if (self) {
-        self->stop();
+        bool shouldStop = false;
+        {
+            std::lock_guard<std::mutex> lock(self->mLock);
+            if (self->mIsRunning && !self->mIsStopping) {
+                shouldStop = true;
+            }
+        }
+        if (shouldStop) {
+            self->stop();
+        }
     }
 }
 
