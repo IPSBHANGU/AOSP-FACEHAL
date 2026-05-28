@@ -87,6 +87,10 @@ void FaceEngine::release() {
 
 int FaceEngine::authenticate(const std::vector<uint8_t> &/*nv21Frame*/, int /*width*/, int /*height*/,
                              int userId, float &outScore, int32_t &outFaceId) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub authenticate: operation cancelled, skipping frame processing";
+        return -1;
+    }
     std::lock_guard<std::mutex> lock(mImpl->enrollmentMutex);
     if (mImpl->enrolledEmbeddings.empty()) {
         LOG(INFO) << "Stub auth failed: No enrolled faces";
@@ -105,6 +109,10 @@ int FaceEngine::authenticate(const std::vector<uint8_t> &/*nv21Frame*/, int /*wi
 
 int FaceEngine::enroll(int userId, const std::vector<uint8_t> &/*nv21Frame*/, int /*width*/,
                        int /*height*/, int32_t &outFaceId) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub authenticate: operation cancelled, skipping frame processing";
+        return -1;
+    }
     mEnrollFrameCount++;
     int progress = (mEnrollFrameCount * 100) / ENROLL_REQUIRED_GOOD_FRAMES;
     LOG(INFO) << "Stub enroll progress: " << progress << "%";
@@ -145,6 +153,10 @@ int FaceEngine::enroll(int userId, const std::vector<uint8_t> &/*nv21Frame*/, in
 
 int FaceEngine::analyzeFaceQuality(const std::vector<uint8_t> &/*nv21*/, int /*width*/,
                                    int /*height*/) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub authenticate: operation cancelled, skipping frame processing";
+        return -1;
+    }
     // Stub always reports good face quality
     return VendorCode::FACE_OK;
 }
@@ -199,6 +211,13 @@ std::vector<float> FaceEngine::getLastLandmarks() {
 
 void FaceEngine::resetEnrollment() {
     mEnrollFrameCount = 0;
+}
+
+void FaceEngine::cancelAll() {
+    LOG(INFO) << "Stub FaceEngine::cancelAll: cancelling and resetting all operations";
+    mCancelled = true;
+    resetEnrollment();
+    mCaptureRequested = false;
 }
 
 } // namespace hal

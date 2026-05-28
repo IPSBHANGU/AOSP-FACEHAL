@@ -323,6 +323,10 @@ bool FaceEngine::restoreEnrollments(int userId) {
 }
 
 int FaceEngine::enroll(int userId, const std::vector<uint8_t> &nv21Frame, int width, int height, int32_t &outFaceId) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub enroll: operation cancelled, skipping frame processing";
+        return -1;
+    }
     // 1. Run quality logic & pose detection (analyze lighting, size, etc.)
     // 2. Extract float embedding vector (e.g., 512 dimensions)
     std::vector<float> embedding(512, 0.0f); // Compute real embedding here
@@ -348,6 +352,10 @@ int FaceEngine::enroll(int userId, const std::vector<uint8_t> &nv21Frame, int wi
 }
 
 int FaceEngine::authenticate(const std::vector<uint8_t> &nv21Frame, int width, int height, int userId, float &outScore, int32_t &outFaceId) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub authenticate: operation cancelled, skipping frame processing";
+        return -1;
+    }
     // 1. Extract live embedding
     std::vector<float> liveEmbedding = { /* ... extracted features ... */ };
     
@@ -375,6 +383,10 @@ int FaceEngine::authenticate(const std::vector<uint8_t> &nv21Frame, int width, i
 }
 
 int FaceEngine::analyzeFaceQuality(const std::vector<uint8_t> &nv21, int width, int height) {
+    if (isCancelled()) {
+        LOG(INFO) << "Stub analyzeFaceQuality: operation cancelled, skipping frame processing";
+        return -1;
+    }
     return VendorCode::FACE_OK;
 }
 
@@ -407,6 +419,13 @@ std::vector<float> FaceEngine::getLastLandmarks() {
 
 void FaceEngine::resetEnrollment() {
     mEnrollFrameCount = 0;
+}
+
+void FaceEngine::cancelAll() {
+    LOG(INFO) << "Stub FaceEngine::cancelAll: cancelling and resetting all operations";
+    mCancelled = true;
+    resetEnrollment();
+    mCaptureRequested = false;
 }
 
 void FaceEngine::getSensorProps(aidl::android::hardware::biometrics::face::SensorProps &props) {

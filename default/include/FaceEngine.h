@@ -20,9 +20,11 @@
 #include "FaceStorageCallbacks.h"
 #include "VendorStateManager.h"
 #include <aidl/android/hardware/biometrics/face/SensorProps.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <functional>
 
 namespace org {
 namespace milahaina {
@@ -94,6 +96,9 @@ public:
   bool getRequireDiversePoses() const { return mRequireDiversePoses; }
 
   void resetEnrollment();
+  void cancelAll();
+  void startOperation() { mCancelled = false; }
+  bool isCancelled() const { return mCancelled; }
 
   enum class FacePose { CENTER, LEFT, RIGHT, UP, DOWN };
 
@@ -112,6 +117,7 @@ private:
   bool mRequireDiversePoses = false;
   bool mCaptureRequested = false;
   int mRotation = 0;
+  std::atomic<bool> mCancelled{false};
 
   std::function<int(const std::vector<uint8_t>&, int, int, int)>
       mVisionFrameCallback;

@@ -25,6 +25,7 @@
 #include <aidl/android/hardware/biometrics/face/EnrollmentFrame.h>
 #include <android-base/logging.h>
 #include <aidl/android/hardware/biometrics/common/DisplayState.h>
+#include <aidl/android/hardware/biometrics/common/OperationReason.h>
 #include <unistd.h>
 
 namespace org {
@@ -36,6 +37,8 @@ using aidl::android::hardware::biometrics::face::AcquiredInfo;
 using aidl::android::hardware::biometrics::face::AuthenticationFrame;
 using aidl::android::hardware::biometrics::face::EnrollmentFrame;
 using aidl::android::hardware::biometrics::face::Error;
+using aidl::android::hardware::biometrics::common::DisplayState;
+using aidl::android::hardware::biometrics::common::OperationReason;
 
 struct Session::SessionCallbackQueue {
     std::mutex lock;
@@ -47,7 +50,8 @@ struct Session::SessionCallbackQueue {
 Session::Session(int32_t userId, const std::shared_ptr<ISessionCallback> &cb)
     : mUserId(userId), mCb(cb), mEngine(FaceEngine::getInstance()),
       mCryptoClient(CryptoClient::getInstance()), mCameraClient(std::make_shared<CameraClient>()),
-      mIsAuthenticating(false), mIsEnrolling(false), mIsDetectingInteraction(false), mEnrollRemaining(0), mCurrentChallenge(0) {
+      mIsAuthenticating(false), mIsEnrolling(false), mIsDetectingInteraction(false), mEnrollRemaining(0), mCurrentChallenge(0),
+      mCurrentOperationReason(OperationReason::UNKNOWN), mCurrentDisplayState(DisplayState::UNKNOWN) {
   if (!mEngine.init(getFaceEngineCallbacks())) {
     LOG(ERROR) << "Failed to initialize FaceEngine in Session";
   }
@@ -94,6 +98,7 @@ Session::~Session() {
 }
 
 void Session::cancel() {
+  LOG(INFO) << "Session::cancel: cancelling all active operations";
   if (mIsAuthenticating || mIsEnrolling || mIsDetectingInteraction) {
     postCallback([cb = mCb]() {
         cb->onError(Error::CANCELED, 0);
@@ -102,11 +107,17 @@ void Session::cancel() {
   mIsAuthenticating = false;
   mIsEnrolling = false;
   mIsDetectingInteraction = false;
+  mCurrentOperationReason = OperationReason::UNKNOWN;
+  mEngine.cancelAll();
   mCameraClient->stop();
 }
 
 int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
                            int height, int angle) {
+  if (mEngine.isCancelled()) {
+    LOG(INFO) << "onCameraFrame: operation is cancelled, skipping frame processing";
+    return -1;
+  }
   LOG(INFO) << "onCameraFrame: received frame of size " << frame.size() << " ("
             << width << "x" << height << ") angle=" << angle
             << " mIsEnrolling=" << mIsEnrolling
@@ -121,14 +132,16 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
               << " faceId=" << matchedFaceId;
     if (res == 0) {
       mIsAuthenticating = false;
+      mCurrentOperationReason = OperationReason::UNKNOWN;
       mCameraClient->stop();
       HardwareAuthToken hat;
       postCallback([cb = mCb, matchedFaceId, hat]() {
           cb->onAuthenticationSucceeded(matchedFaceId, hat);
       });
     } else if (res > 0) {
-      // No match
-      if (res != VendorCode::KEEP) {
+      // No match - only call onAuthenticationFailed for actual match failure or spoof/liveness reject.
+      // Acquisition/scan warning codes (like FACE_NOT_FOUND) should not register as match failures.
+      if (res == 1 || res == VendorCode::FAILED) {
         postCallback([cb = mCb]() {
             cb->onAuthenticationFailed();
         });
@@ -223,6 +236,7 @@ Session::enroll(const HardwareAuthToken & /*hat*/, EnrollmentType type,
   LOG(INFO) << "Session::enroll user=" << mUserId
             << " type=" << static_cast<int>(type)
             << " features=" << features.size();
+  mEngine.startOperation();
   mIsEnrolling = true;
 
   // Start direct Camera Provider client for native enrollment.
@@ -257,7 +271,20 @@ ScopedAStatus Session::authenticate(int64_t operationId,
                                     std::shared_ptr<ICancellationSignal>* _aidl_return) {
     LOG(INFO) << "Session::authenticate user=" << mUserId
               << " operationId=" << operationId;
+    mEngine.startOperation();
     mIsAuthenticating = true;
+
+    // Infer OperationReason if not explicitly set via authenticateWithContext
+    if (mCurrentOperationReason == OperationReason::UNKNOWN) {
+      if (mCurrentDisplayState == DisplayState::LOCKSCREEN) {
+        mCurrentOperationReason = OperationReason::KEYGUARD;
+        LOG(INFO) << "Session::authenticate: Inferred OperationReason::KEYGUARD from DisplayState::LOCKSCREEN";
+      } else {
+        mCurrentOperationReason = OperationReason::BIOMETRIC_PROMPT;
+        LOG(INFO) << "Session::authenticate: Inferred OperationReason::BIOMETRIC_PROMPT from DisplayState ("
+                  << (int)mCurrentDisplayState << ")";
+      }
+    }
 
     bool started = mCameraClient->start([this](const std::vector<uint8_t>& frame, int width, int height, int angle) {
         mEngine.onCameraFrame(frame, width, height, angle);
@@ -280,6 +307,7 @@ ScopedAStatus Session::authenticate(int64_t operationId,
 ScopedAStatus
 Session::detectInteraction(std::shared_ptr<ICancellationSignal> *_aidl_return) {
     LOG(INFO) << "Session::detectInteraction";
+    mEngine.startOperation();
     mIsDetectingInteraction = true;
 
     bool started = mCameraClient->start([this](const std::vector<uint8_t>& frame, int width, int height, int angle) {
@@ -383,6 +411,7 @@ Session::enrollWithContext(const HardwareAuthToken &hat, EnrollmentType type,
 ScopedAStatus Session::authenticateWithContext(
     int64_t operationId, const OperationContext &context,
     std::shared_ptr<ICancellationSignal> *_aidl_return) {
+  mCurrentOperationReason = context.reason;
   return authenticate(operationId, _aidl_return);
 }
 
@@ -395,6 +424,39 @@ ScopedAStatus Session::detectInteractionWithContext(
 ScopedAStatus Session::onContextChanged(const OperationContext &context) {
   LOG(INFO) << "Session::onContextChanged: reason=" << (int)context.reason
             << ", displayState=" << (int)context.displayState;
+
+  if (mIsAuthenticating &&
+      mCurrentOperationReason == OperationReason::BIOMETRIC_PROMPT &&
+      context.reason != OperationReason::BIOMETRIC_PROMPT) {
+    LOG(INFO) << "Session::onContextChanged: Biometric prompt is no longer active, cancelling face auth.";
+    cancel();
+    return ScopedAStatus::ok();
+  }
+
+  mCurrentDisplayState = context.displayState;
+  if ((context.displayState == DisplayState::AOD || context.displayState == DisplayState::NO_UI) &&
+      mCurrentOperationReason != OperationReason::BIOMETRIC_PROMPT) {
+    LOG(INFO) << "Session::onContextChanged: Display is AOD or NO_UI (OFF), cancelling active operations.";
+    cancel();
+    return ScopedAStatus::ok();
+  }
+
+  // If display transitions to LOCKSCREEN, dynamically correct operation reason to KEYGUARD
+  if (context.displayState == DisplayState::LOCKSCREEN && mIsAuthenticating) {
+    if (mCurrentOperationReason != OperationReason::KEYGUARD) {
+      mCurrentOperationReason = OperationReason::KEYGUARD;
+      LOG(INFO) << "Session::onContextChanged: Corrected operation reason to KEYGUARD due to DisplayState::LOCKSCREEN";
+    }
+  }
+
+  if (mIsAuthenticating &&
+      (mCurrentOperationReason == OperationReason::KEYGUARD || mCurrentDisplayState == DisplayState::LOCKSCREEN) &&
+      context.displayState != DisplayState::LOCKSCREEN) {
+    LOG(INFO) << "Session::onContextChanged: Lockscreen no longer active, cancelling face auth.";
+    cancel();
+    return ScopedAStatus::ok();
+  }
+
   return ScopedAStatus::ok();
 }
 

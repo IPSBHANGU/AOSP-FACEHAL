@@ -39,8 +39,10 @@ namespace hal {
 using aidl::android::hardware::biometrics::face::BnSession;
 using aidl::android::hardware::biometrics::face::ISessionCallback;
 using aidl::android::hardware::keymaster::HardwareAuthToken;
+using aidl::android::hardware::biometrics::common::DisplayState;
 using aidl::android::hardware::biometrics::common::ICancellationSignal;
 using aidl::android::hardware::biometrics::common::OperationContext;
+using aidl::android::hardware::biometrics::common::OperationReason;
 using aidl::android::hardware::biometrics::face::EnrollmentStageConfig;
 using aidl::android::hardware::biometrics::face::EnrollmentType;
 using aidl::android::hardware::biometrics::face::Feature;
@@ -99,6 +101,8 @@ private:
     bool mIsDetectingInteraction;
     int32_t mEnrollRemaining;
     uint64_t mCurrentChallenge;
+    OperationReason mCurrentOperationReason;
+    DisplayState mCurrentDisplayState;
 
     int onCameraFrame(const std::vector<uint8_t>& frame, int width, int height, int angle);
     void postCallback(std::function<void()> task);
