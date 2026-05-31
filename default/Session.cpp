@@ -20,6 +20,7 @@
 #include "CancellationSignal.h"
 #include "FaceEngine.h"
 #include "FaceStorageCallbacks.h"
+#include "AcquiredInfoMapper.h"
 #include <aidl/android/hardware/biometrics/face/AcquiredInfo.h>
 #include <aidl/android/hardware/biometrics/face/AuthenticationFrame.h>
 #include <aidl/android/hardware/biometrics/face/EnrollmentFrame.h>
@@ -135,6 +136,12 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
       mCurrentOperationReason = OperationReason::UNKNOWN;
       mCameraClient->stop();
       HardwareAuthToken hat;
+      hat.challenge = mCurrentChallenge;
+      hat.userId = mUserId;
+      hat.authenticatorId = 0;
+      hat.timestamp = aidl::android::hardware::keymaster::Timestamp{
+          .milliSeconds = 0L
+      };
       postCallback([cb = mCb, matchedFaceId, hat]() {
           cb->onAuthenticationSucceeded(matchedFaceId, hat);
       });
@@ -145,13 +152,16 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
         postCallback([cb = mCb]() {
             cb->onAuthenticationFailed();
         });
+      } else {
+        int32_t vendorCode = 0;
+        AcquiredInfo info = AcquiredInfoMapper::mapVendorCode(res, vendorCode);
+        AuthenticationFrame authFrame;
+        authFrame.data.acquiredInfo = info;
+        authFrame.data.vendorCode = vendorCode;
+        postCallback([cb = mCb, authFrame]() {
+            cb->onAuthenticationFrame(authFrame);
+        });
       }
-      AuthenticationFrame authFrame;
-      authFrame.data.acquiredInfo = AcquiredInfo::VENDOR;
-      authFrame.data.vendorCode = res;
-      postCallback([cb = mCb, authFrame]() {
-          cb->onAuthenticationFrame(authFrame);
-      });
     }
     return res;
   } else if (mIsDetectingInteraction) {
@@ -188,10 +198,12 @@ int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
           cb->onEnrollmentProgress(outFaceId, remaining);
       });
     } else {
-      // Bad quality or error — report vendor code for UI feedback
+      // Bad quality or error — report mapped AcquiredInfo for UI feedback
+      int32_t vendorCode = 0;
+      AcquiredInfo info = AcquiredInfoMapper::mapVendorCode(res, vendorCode);
       EnrollmentFrame enrollFrame;
-      enrollFrame.data.acquiredInfo = AcquiredInfo::VENDOR;
-      enrollFrame.data.vendorCode = res;
+      enrollFrame.data.acquiredInfo = info;
+      enrollFrame.data.vendorCode = vendorCode;
       postCallback([cb = mCb, enrollFrame]() {
           cb->onEnrollmentFrame(enrollFrame);
       });
@@ -271,6 +283,7 @@ ScopedAStatus Session::authenticate(int64_t operationId,
                                     std::shared_ptr<ICancellationSignal>* _aidl_return) {
     LOG(INFO) << "Session::authenticate user=" << mUserId
               << " operationId=" << operationId;
+    mCurrentChallenge = operationId;
     mEngine.startOperation();
     mIsAuthenticating = true;
 
