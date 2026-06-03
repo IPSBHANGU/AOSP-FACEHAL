@@ -20,6 +20,7 @@
 #include "FaceStorageManager.h"
 #include "FaceTemplateSerializer.h"
 #include "VendorStateManager.h"
+#include "CryptoClient.h"
 #include <android-base/logging.h>
 #include <cstring>
 #include <vector>
@@ -61,6 +62,12 @@ inline FaceEngineCallbacks getFaceEngineCallbacks() {
       }
     }
     return result;
+  };
+  callbacks.encrypt = [](int userId, const std::vector<uint8_t>& data) -> std::vector<uint8_t> {
+    return CryptoClient::getInstance()->encrypt(userId, data);
+  };
+  callbacks.decrypt = [](int userId, const std::vector<uint8_t>& data) -> std::vector<uint8_t> {
+    return CryptoClient::getInstance()->decrypt(userId, data);
   };
   return callbacks;
 }

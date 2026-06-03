@@ -64,6 +64,10 @@ struct FaceEngineCallbacks {
   std::function<bool(int userId, int faceId)> deleteTemplate;
   std::function<std::vector<std::pair<int32_t, std::vector<float>>>(int userId)>
       loadTemplates;
+  std::function<std::vector<uint8_t>(int userId, const std::vector<uint8_t>&)>
+      encrypt;
+  std::function<std::vector<uint8_t>(int userId, const std::vector<uint8_t>&)>
+      decrypt;
 };
 
 } // namespace hal

@@ -347,25 +347,42 @@ std::vector<uint8_t> CryptoClient::encrypt(int32_t userId, const std::vector<uin
     const std::optional<std::vector<uint8_t>> nonce = GetNonceFromResponse(result);
     if (!nonce || nonce->empty()) {
         LOG(ERROR) << "KeyMint did not return AES-GCM nonce";
+        result.iOperation->abort();
         return {};
     }
 
-    std::optional<std::vector<uint8_t>> updateOutput;
-    status = result.iOperation->update(data, &updateOutput);
-    if (!status.isOk()) {
-        LOG(ERROR) << "AES-GCM encrypt update failed: " << status.getMessage();
-        return {};
+    std::vector<uint8_t> ciphertext;
+    size_t offset = 0;
+    constexpr size_t kChunkSize = 4096;
+    while (offset < data.size()) {
+        size_t chunk = std::min(data.size() - offset, kChunkSize);
+        std::vector<uint8_t> chunkData(data.begin() + offset, data.begin() + offset + chunk);
+        std::optional<std::vector<uint8_t>> updateOutput;
+        status = result.iOperation->update(chunkData, &updateOutput);
+        if (!status.isOk()) {
+            LOG(ERROR) << "AES-GCM encrypt update failed at offset " << offset << ": " << status.getMessage();
+            result.iOperation->abort();
+            return {};
+        }
+        if (updateOutput) {
+            ciphertext.insert(ciphertext.end(), updateOutput->begin(), updateOutput->end());
+        }
+        offset += chunk;
     }
 
     std::optional<std::vector<uint8_t>> finishOutput;
     status = result.iOperation->finish(std::nullopt, std::nullopt, &finishOutput);
     if (!status.isOk()) {
         LOG(ERROR) << "AES-GCM encrypt finish failed: " << status.getMessage();
+        result.iOperation->abort();
         return {};
     }
 
-    std::vector<uint8_t> payload = SerializeStoragePayload(
-            *nonce, JoinOperationOutput(updateOutput, finishOutput));
+    if (finishOutput) {
+        ciphertext.insert(ciphertext.end(), finishOutput->begin(), finishOutput->end());
+    }
+
+    std::vector<uint8_t> payload = SerializeStoragePayload(*nonce, ciphertext);
     if (payload.empty()) {
         LOG(ERROR) << "Failed to serialize encrypted template payload";
     }
@@ -401,21 +418,38 @@ std::vector<uint8_t> CryptoClient::decrypt(int32_t userId,
         return {};
     }
 
-    std::optional<std::vector<uint8_t>> updateOutput;
-    status = result.iOperation->update(ciphertext, &updateOutput);
-    if (!status.isOk()) {
-        LOG(ERROR) << "AES-GCM decrypt update failed: " << status.getMessage();
-        return {};
+    std::vector<uint8_t> decrypted;
+    size_t offset = 0;
+    constexpr size_t kChunkSize = 4096;
+    while (offset < ciphertext.size()) {
+        size_t chunk = std::min(ciphertext.size() - offset, kChunkSize);
+        std::vector<uint8_t> chunkData(ciphertext.begin() + offset, ciphertext.begin() + offset + chunk);
+        std::optional<std::vector<uint8_t>> updateOutput;
+        status = result.iOperation->update(chunkData, &updateOutput);
+        if (!status.isOk()) {
+            LOG(ERROR) << "AES-GCM decrypt update failed at offset " << offset << ": " << status.getMessage();
+            result.iOperation->abort();
+            return {};
+        }
+        if (updateOutput) {
+            decrypted.insert(decrypted.end(), updateOutput->begin(), updateOutput->end());
+        }
+        offset += chunk;
     }
 
     std::optional<std::vector<uint8_t>> finishOutput;
     status = result.iOperation->finish(std::nullopt, std::nullopt, &finishOutput);
     if (!status.isOk()) {
         LOG(ERROR) << "AES-GCM decrypt finish failed: " << status.getMessage();
+        result.iOperation->abort();
         return {};
     }
 
-    return JoinOperationOutput(updateOutput, finishOutput);
+    if (finishOutput) {
+        decrypted.insert(decrypted.end(), finishOutput->begin(), finishOutput->end());
+    }
+
+    return decrypted;
 }
 
 std::vector<uint8_t> CryptoClient::generateMac(const std::vector<uint8_t>& data) {
@@ -472,25 +506,41 @@ std::vector<uint8_t> CryptoClient::signWithHmacKey(const std::vector<uint8_t>& d
         }
     }
 
-    std::optional<std::vector<uint8_t>> updateOutput;
-    status = result.iOperation->update(data, &updateOutput);
-    if (!status.isOk()) {
-        LOG(ERROR) << "HMAC update failed: " << status.getMessage();
-        return {};
+    std::vector<uint8_t> mac_accum;
+    size_t offset = 0;
+    constexpr size_t kChunkSize = 4096;
+    while (offset < data.size()) {
+        size_t chunk = std::min(data.size() - offset, kChunkSize);
+        std::vector<uint8_t> chunkData(data.begin() + offset, data.begin() + offset + chunk);
+        std::optional<std::vector<uint8_t>> updateOutput;
+        status = result.iOperation->update(chunkData, &updateOutput);
+        if (!status.isOk()) {
+            LOG(ERROR) << "HMAC update failed at offset " << offset << ": " << status.getMessage();
+            result.iOperation->abort();
+            return {};
+        }
+        if (updateOutput) {
+            mac_accum.insert(mac_accum.end(), updateOutput->begin(), updateOutput->end());
+        }
+        offset += chunk;
     }
 
     std::optional<std::vector<uint8_t>> finishOutput;
     status = result.iOperation->finish(std::nullopt, std::nullopt, &finishOutput);
     if (!status.isOk()) {
         LOG(ERROR) << "HMAC finish failed: " << status.getMessage();
+        result.iOperation->abort();
         return {};
     }
 
-    std::vector<uint8_t> mac = JoinOperationOutput(updateOutput, finishOutput);
-    if (mac.empty()) {
+    if (finishOutput) {
+        mac_accum.insert(mac_accum.end(), finishOutput->begin(), finishOutput->end());
+    }
+
+    if (mac_accum.empty()) {
         LOG(ERROR) << "HMAC operation returned empty MAC";
     }
-    return mac;
+    return mac_accum;
 }
 
 }  // namespace hal
