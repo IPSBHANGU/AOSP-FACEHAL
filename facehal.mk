@@ -25,3 +25,8 @@ PRODUCT_PACKAGES += \
 # Face HAL SELinux Policies
 BOARD_VENDOR_SEPOLICY_DIRS += \
     $(LOCAL_PATH)/sepolicy
+
+# Enable Logging
+MILAHAINA_FACEHAL_ENABLE_LOGGING ?= false
+$(call add_soong_config_namespace,milahaina_facehal)
+$(call add_soong_config_var_value,milahaina_facehal,enable_logging,$(MILAHAINA_FACEHAL_ENABLE_LOGGING))
