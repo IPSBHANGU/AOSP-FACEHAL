@@ -5,6 +5,31 @@ This repository contains the biometric Face Hardware Abstraction Layer (HAL) imp
 > [!NOTE]
 > This is a hobby project shared/made for educational and experimentation purposes. No one has any obligation to use it. You have full access to the source code and can design/integrate your own face unlock logic.
 
+## How to Use
+
+To integrate this Face HAL implementation into your device build:
+
+1. Clone this repository into your AOSP root (e.g., under `vendor/milahaina/facehal`):
+   ```bash
+   git clone https://github.com/IPSBHANGU/AOSP-FACEHAL vendor/milahaina/facehal
+   ```
+2. Inherit/include `facehal.mk` in your device's configuration Makefile (`device.mk`):
+   ```makefile
+   $(call inherit-product, vendor/milahaina/facehal/facehal.mk)
+   ```
+3. (Optional) Configure build system flags in your `device.mk` before inheriting `facehal.mk`:
+   * **Engine Model Selection** (default is `milahaina`):
+     ```makefile
+     # Select "milahaina" or "megvii"
+     MILAHAINA_FACEHAL_ENGINE_MODEL := milahaina
+     ```
+   * **Logging Control** (default is `false`):
+     ```makefile
+     # Set to true to enable verbose HAL service debug logging
+     MILAHAINA_FACEHAL_ENABLE_LOGGING := true
+     ```
+
+
 ---
 
 ## How It Works: High-Level Architecture
