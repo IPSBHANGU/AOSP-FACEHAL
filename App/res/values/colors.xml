@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:androidprv="http://schemas.android.com/apk/prv/res/android">
+
+    <color name="theme_accent">@androidprv:color/accent_device_default_light</color>
+    <color name="theme_accent_primary">@androidprv:color/accent_primary_device_default</color>
+    <color name="theme_accent_200">@androidprv:color/system_accent1_200</color>
+
+</resources>

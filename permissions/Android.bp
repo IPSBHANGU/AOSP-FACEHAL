@@ -1,0 +1,6 @@
+prebuilt_etc {
+    name: "privapp_whitelist_org.milahaina.vision.xml",
+    src: "privapp_whitelist_org.milahaina.vision.xml",
+    sub_dir: "permissions",
+    vendor: true,
+}

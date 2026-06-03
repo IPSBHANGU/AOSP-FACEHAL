@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MiLahaina Vision</string>
+
+    <!-- Enroll activity -->
+    <string name="face_enroll_title">Center your face in the camera</string>
+    <string name="face_enroll_description">Hold still, and make sure you\'re in a well lit environment</string>
+    <string name="face_enroll_finish_title">Looks good!</string>
+    <string name="face_enroll_done">Done</string>
+
+    <!-- Try Again activity -->
+    <string name="face_try_again_title">Couldn\'t capture your face</string>
+    <string name="face_try_again_description">Tap below to try again. Next time, make sure you\'re in a well lit environment and nothing is obscuring your face</string>
+    <string name="btn_try_again">Try again</string>
+
+    <!-- Vendor Messages -->
+    <string name="attr_light_dark">Face needs more light</string>
+    <string name="attr_light_high">Face has too much light</string>
+    <string name="attr_light_shadow">Face has too many shadows</string>
+    <string name="unlock_failed_face_blur">Face is too blurry</string>
+    <string name="unlock_failed_face_large">Face is too close</string>
+    <string name="unlock_failed_face_multi">Too many faces detected</string>
+    <string name="unlock_failed_face_not_complete">Only partial face detected</string>
+    <string name="unlock_failed_face_small">Face is too far away</string>
+    <string name="unlock_failed_face_offset_left">Move head right</string>
+    <string name="unlock_failed_face_offset_right">Move head left</string>
+    <string name="unlock_failed_face_offset_up">Move head down</string>
+    <string name="unlock_failed_face_offset_down">Move head up</string>
+    <string name="unlock_failed_face_rotated_left">Tilt head right</string>
+    <string name="unlock_failed_face_rotated_right">Tilt head left</string>
+    <string name="unlock_failed_face_not_found">Looking for your face\u2026</string>
+    <string name="unlock_reenroll_required">Face Unlock update requires you to re-enroll your face.</string>
+
+    <!-- Camera pipeline errors (HAL vendor codes 50–58, FaceEngine.h) -->
+    <string name="camera_error_no_device">Camera is not ready. Wait a moment, check that another app isn’t using the camera, then try again.</string>
+    <string name="camera_error_id_select_failed">Couldn’t choose a camera for face enrollment. Try again.</string>
+    <string name="camera_error_manager">Camera system failed to start. Reboot the device and try again.</string>
+    <string name="camera_error_open">Couldn’t open the camera. Close other apps using the camera and try again.</string>
+    <string name="camera_error_image_reader">Camera preview failed to initialize. Try again.</string>
+    <string name="camera_error_window">Couldn’t get a preview surface from the camera. Try again.</string>
+    <string name="camera_error_session">Couldn’t start the camera session. Try again.</string>
+    <string name="camera_error_request">Couldn’t configure capture. Try again.</string>
+    <string name="camera_error_streaming">Camera stream failed to start. Try again.</string>
+
+</resources>

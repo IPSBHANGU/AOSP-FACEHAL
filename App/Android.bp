@@ -1,0 +1,25 @@
+android_app {
+    name: "MiLahainaVision",
+    srcs: ["src/**/*.java", "src/**/*.kt"],
+    static_libs: [
+        "androidx.core_core",
+        "androidx.appcompat_appcompat",
+        "setup-wizard-lib",
+        "setupcompat",
+        "setupdesign",
+        "vendor.milahaina.biometrics.face-V2-java",
+    ],
+
+    required: [
+        "privapp_whitelist_org.milahaina.vision.xml",
+        "MiLahainaVisionOverlay",
+    ],
+
+    platform_apis: true,
+    privileged: true,
+    certificate: "platform",
+    optimize: {
+        enabled: false,
+    },
+    vendor: true,
+}
