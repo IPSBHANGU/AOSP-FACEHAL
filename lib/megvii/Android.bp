@@ -1,0 +1,119 @@
+soong_namespace {
+}
+
+cc_prebuilt_library_shared {
+    name: "libmilahaina_face_engine",
+    owner: "milahaina",
+    strip: {
+        none: true,
+    },
+    target: {
+        android_arm64: {
+            srcs: [
+                "libmilahaina_face_engine.so",
+            ],
+            shared_libs: [
+                "android.hardware.biometrics.face-V4-ndk",
+                "android.hardware.biometrics.common-V4-ndk",
+                "android.system.keystore2-V1-ndk",
+                "libbase",
+                "libcrypto",
+                "libcutils",
+                "libdl",
+                "liblog",
+                "libutils",
+                "libFaceDetectCA",
+                "libmegface",
+                "libMegviiUnlock",
+            ],
+        },
+    },
+    compile_multilib: "64",
+    prefer: true,
+    soc_specific: true,
+
+    required: [
+        "model_file",
+        "panorama_mgb",
+    ],
+
+}
+
+cc_prebuilt_library_shared {
+    name: "libFaceDetectCA",
+    soc_specific: true,
+    compile_multilib: "64",
+    prefer: true,
+    target: {
+        android_arm64: {
+            srcs: ["libFaceDetectCA.so"],
+        },
+    },
+    shared_libs: [
+        "libmegface",
+        "liblog",
+        "libm",
+        "libdl",
+        "libc",
+    ],
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_library_shared {
+    name: "libmegface",
+    soc_specific: true,
+    compile_multilib: "64",
+    prefer: true,
+    target: {
+        android_arm64: {
+            srcs: ["libmegface.so"],
+        },
+    },
+    shared_libs: [
+        "liblog",
+        "libm",
+        "libdl",
+        "libc",
+    ],
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_library_shared {
+    name: "libMegviiUnlock",
+    soc_specific: true,
+    compile_multilib: "64",
+    prefer: true,
+    target: {
+        android_arm64: {
+            srcs: ["libMegviiUnlock.so"],
+        },
+    },
+    shared_libs: [
+        "libmegface",
+        "liblog",
+        "libm",
+        "libdl",
+        "libc",
+    ],
+    strip: {
+        none: true,
+    },
+}
+
+prebuilt_etc {
+    name: "model_file",
+    soc_specific: true,
+    src: "model_file",
+    sub_dir: "face",
+}
+
+prebuilt_etc {
+    name: "panorama_mgb",
+    soc_specific: true,
+    src: "panorama_mgb",
+    sub_dir: "face",
+}

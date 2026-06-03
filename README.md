@@ -149,22 +149,27 @@ These policies are automatically integrated into the Android build system when y
 
 ---
 
-## Prebuilt Face Engine Features (`libmilahaina_face_engine`)
+## Face Engine Integration Options (`libmilahaina_face_engine`)
 
-> [!NOTE]
-> The current HAL architecture uses a prebuilt reference library (`libmilahaina_face_engine`) that supports the features listed below. However, the system is fully decoupled, meaning you can construct and implement your own custom face engine by implementing the `FaceEngine` interface.
+The build system supports selecting between two different prebuilt face engine implementations:
 
-> [!IMPORTANT]
-> This library is continuously updated alongside HAL bug-fixes and face unlock model updates. It features a fully custom model built from the ground up with proprietary logic; as such, it is distributed strictly as a private, prebuilt library with internal logging disabled.
+### 1. Custom MiLahaina Library (`milahaina`)
+This is the default configuration, incorporating the custom face engine built specifically for this project.
 
-- **Face Detection & Landmarks:** Real-time CNN-based face detection (`FaceDetector`) tracking 6 key facial landmarks (12 coordinate values) to determine face position and size.
-- **Biometric Embeddings:** A neural network (`FaceEmbedder`) generating a 512-dimensional face recognition vector.
-- **Multi-Modal Anti-Spoofing (Liveness):**
-  - *Texture Analysis:* Laplacian variance calculations detect defocus and screen refresh patterns.
-  - *Color Analysis:* YCrCb chrominance range checks verify human skin color spectra.
-  - *Instant Parallax:* 3D geometric ratios between landmarks identify flat 2D photos.
-  - *Multi-Frame Parallax:* Tracked landmark history configurations verify depth changes through head motion.
-- **Attention Detection:** Monitored eye openness levels (`leftEyeOpen`/`rightEyeOpen`) prevent unlocking with closed eyes.
+* **Face Detection & Landmarks:** Real-time CNN-based face detection (`FaceDetector`) tracking 6 key facial landmarks (12 coordinate values) to determine face position and size.
+* **Biometric Embeddings:** A neural network (`FaceEmbedder`) generating a 512-dimensional face recognition vector.
+* **Multi-Modal Anti-Spoofing (Liveness):**
+  * *Texture Analysis:* Laplacian variance calculations detect defocus and screen refresh patterns.
+  * *Color Analysis:* YCrCb chrominance range checks verify human skin color spectra.
+  * *Instant Parallax:* 3D geometric ratios between landmarks identify flat 2D photos.
+  * *Multi-Frame Parallax:* Tracked landmark history configurations verify depth changes through head motion.
+* **Attention Detection:** Monitored eye openness levels (`leftEyeOpen`/`rightEyeOpen`) prevent unlocking with closed eyes.
+
+### 2. Megvii Library (`megvii`)
+This builds using the Megvii proprietary prebuilt face engine and relies on Megvii's proprietary logic.
+
+The source code for this face engine configuration can be picked from the [FaceLib-Megvii](https://github.com/IPSBHANGU/FaceLib-Megvii.git) repository.
+
 ---
 
 ## Implementing a Custom Face Engine

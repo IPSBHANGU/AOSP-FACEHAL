@@ -30,3 +30,12 @@ BOARD_VENDOR_SEPOLICY_DIRS += \
 MILAHAINA_FACEHAL_ENABLE_LOGGING ?= false
 $(call add_soong_config_namespace,milahaina_facehal)
 $(call add_soong_config_var_value,milahaina_facehal,enable_logging,$(MILAHAINA_FACEHAL_ENABLE_LOGGING))
+
+# Face Engine Model Type (milahaina or megvii)
+MILAHAINA_FACEHAL_ENGINE_MODEL ?= milahaina
+
+ifeq ($(MILAHAINA_FACEHAL_ENGINE_MODEL),megvii)
+PRODUCT_SOONG_NAMESPACES += $(LOCAL_PATH)/lib/megvii
+else
+PRODUCT_SOONG_NAMESPACES += $(LOCAL_PATH)/lib/milahaina
+endif
