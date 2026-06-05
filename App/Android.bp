@@ -1,5 +1,5 @@
 android_app {
-    name: "MiLahainaVision",
+    name: "MiLahainaVisionPrivate",
     srcs: ["src/**/*.java", "src/**/*.kt"],
     static_libs: [
         "androidx.core_core",
@@ -9,17 +9,26 @@ android_app {
         "setupdesign",
         "vendor.milahaina.biometrics.face-V2-java",
     ],
-
-    required: [
-        "privapp_whitelist_org.milahaina.vision.xml",
-        "MiLahainaVisionOverlay",
-    ],
-
     platform_apis: true,
     privileged: true,
     certificate: "platform",
     optimize: {
         enabled: false,
     },
+    installable: false,
+}
+
+android_app_import {
+    name: "MiLahainaVision",
+    apk: ":MiLahainaVisionPrivate",
+    privileged: true,
     vendor: true,
+    required: [
+        "privapp_whitelist_org.milahaina.vision.xml",
+        "MiLahainaVisionOverlay",
+    ],
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
 }
