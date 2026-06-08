@@ -189,6 +189,7 @@ This is the default configuration, incorporating the custom face engine built sp
   * *Instant Parallax:* 3D geometric ratios between landmarks identify flat 2D photos.
   * *Multi-Frame Parallax:* Tracked landmark history configurations verify depth changes through head motion.
 * **Attention Detection:** Monitored eye openness levels (`leftEyeOpen`/`rightEyeOpen`) prevent unlocking with closed eyes.
+* **Lighting & Exposure Analysis (FaceLighting)**: Real-time Y-channel frame analysis diagnosing underexposure (`DARKLIGHT`), overexposure (`HIGHLIGHT`), low contrast, or rotation-safe side shadows (`HALF_SHADOW`).
 
 ### 2. Megvii Library (`megvii`)
 This builds using the Megvii proprietary prebuilt face engine and relies on Megvii's proprietary logic.
