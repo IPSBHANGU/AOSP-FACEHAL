@@ -466,6 +466,9 @@ ScopedAStatus Session::setFeature(const HardwareAuthToken &hat, Feature feature,
       mEngine.setRequireDiversePoses(enabled);
       LOG(INFO) << "REQUIRE_DIVERSE_POSES set to " << (enabled ? "true" : "false");
   }
+  if (mCb != nullptr) {
+    postCallback([cb = mCb, feature]() { cb->onFeatureSet(feature); });
+  }
   return ScopedAStatus::ok();
 }
 
