@@ -188,7 +188,10 @@ This is the default configuration, incorporating the custom face engine built sp
   * *Color Analysis:* YCrCb chrominance range checks verify human skin color spectra.
   * *Instant Parallax:* 3D geometric ratios between landmarks identify flat 2D photos.
   * *Multi-Frame Parallax:* Tracked landmark history configurations verify depth changes through head motion.
-* **Attention Detection:** Monitored eye openness levels (`leftEyeOpen`/`rightEyeOpen`) prevent unlocking with closed eyes.
+* **Attention Detection (Eye Openness CNN):**
+  * *Custom Lightweight CNN:* A dedicated 3-layer Convolutional Neural Network performs eye openness classification for left and right eyes.
+  * *Zero-Malloc Runtime:* All CNN layer buffers are pre-allocated during initialization, guaranteeing zero heap allocations during inference.
+  * *Heuristic-Free Detection:* Replaces legacy pixel contrast heuristics with learned CNN-based eye state estimation for improved robustness across lighting conditions.
 * **Lighting & Exposure Analysis (FaceLighting)**: Real-time Y-channel frame analysis diagnosing underexposure (`DARKLIGHT`), overexposure (`HIGHLIGHT`), low contrast, or rotation-safe side shadows (`HALF_SHADOW`).
 
 ### 2. Megvii Library (`megvii`)
