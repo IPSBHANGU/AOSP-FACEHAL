@@ -37,9 +37,12 @@ class TryAgainActivity : FaceBaseActivity() {
         super.onCreate(bundle)
         setContentView(R.layout.face_enroll_try_again)
         setHeaderText(R.string.face_try_again_title)
+        val errorMsg = intent.getStringExtra("error_message")
         val cameraVendor = intent.getIntExtra(Constants.EXTRA_KEY_ENROLL_CAMERA_VENDOR_CODE, -1)
         val descRes = VendorCodeMessages.stringResForCameraVendor(cameraVendor)
-        if (descRes != null) {
+        if (!errorMsg.isNullOrEmpty()) {
+            getLayout().setDescriptionText(errorMsg)
+        } else if (descRes != null) {
             getLayout().setDescriptionText(descRes)
         } else {
             getLayout().setDescriptionText(R.string.face_try_again_description)

@@ -41,12 +41,6 @@
                         android:layout_height="320.0dip"
                         android:layout_gravity="center_horizontal"
                         android:background="#00000000" />
-
-                    <org.milahaina.vision.view.FaceMeshOverlayView
-                        android:id="@+id/face_mesh_overlay"
-                        android:layout_width="240.0dip"
-                        android:layout_height="320.0dip"
-                        android:layout_gravity="center_horizontal" />
                 </FrameLayout>
 
                 <FrameLayout

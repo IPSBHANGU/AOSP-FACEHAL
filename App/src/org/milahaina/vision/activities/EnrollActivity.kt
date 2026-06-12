@@ -34,6 +34,7 @@ import org.milahaina.vision.util.Constants
 import org.milahaina.vision.util.PreferenceHelper
 import org.milahaina.vision.util.Util
 import org.milahaina.vision.util.VendorCodeMessages
+import org.milahaina.vision.util.YuvToRgbConverter
 import org.milahaina.vision.view.CircleSurfaceView
 import com.google.android.setupdesign.GlifLayout
 import com.google.android.setupdesign.util.ThemeHelper
@@ -51,18 +52,47 @@ open class EnrollActivity : FaceBaseActivity() {
     private var mFinishScheduled = false
     private var mIsActivityPaused = false
     private var mVisionService: IVisionService? = null
+    private var mYuvToRgbConverter: YuvToRgbConverter? = null
+    private var mReusableBitmap1: Bitmap? = null
+    private var mReusableBitmap2: Bitmap? = null
+    private var mUsingBitmap1 = true
+
+    private val mBackgroundHandlerThread = HandlerThread("FrameProcessor").apply { start() }
+    private val mBackgroundHandler = Handler(mBackgroundHandlerThread.looper)
+    private val mIsProcessingFrame = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val mVisionServiceImpl = object : vendor.milahaina.biometrics.face.IVisionService.Stub() {
         override fun onFrame(pfd: ParcelFileDescriptor, width: Int, height: Int, angle: Int) {
-            try {
-                val size = width * height * 3 / 2   // NV21 = Y + (W*H/2) chroma
-                val data = ByteArray(size)
-                ParcelFileDescriptor.AutoCloseInputStream(pfd).use { autoFis ->
-                    java.io.DataInputStream(autoFis).readFully(data)
+            if (mIsProcessingFrame.compareAndSet(false, true)) {
+                try {
+                    val size = (width * height * 1.5).toInt() // NV21
+                    val fd = pfd.fileDescriptor
+
+                    val data = ByteArray(size)
+                    val fis = java.io.FileInputStream(fd)
+                    fis.read(data)
+                    pfd.close()
+
+                    mBackgroundHandler.post {
+                        try {
+                            renderFrame(data, width, height, angle)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing frame in background", e)
+                        } finally {
+                            mIsProcessingFrame.set(false)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error receiving frame from HAL", e)
+                    try {
+                        pfd.close()
+                    } catch (ignored: Exception) {}
+                    mIsProcessingFrame.set(false)
                 }
-                renderFrame(data, width, height, angle)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error receiving frame from HAL", e)
+            } else {
+                try {
+                    pfd.close()
+                } catch (ignored: Exception) {}
             }
         }
 
@@ -78,20 +108,22 @@ open class EnrollActivity : FaceBaseActivity() {
 
     private fun renderFrame(nv21: ByteArray, width: Int, height: Int, angle: Int) {
         try {
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-            val out = java.io.ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, width, height), 90, out)
-            val imageBytes = out.toByteArray()
-            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            if (mReusableBitmap1 == null || mReusableBitmap1!!.width != width || mReusableBitmap1!!.height != height) {
+                mReusableBitmap1?.recycle()
+                mReusableBitmap1 = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            }
+            if (mReusableBitmap2 == null || mReusableBitmap2!!.width != width || mReusableBitmap2!!.height != height) {
+                mReusableBitmap2?.recycle()
+                mReusableBitmap2 = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            }
 
-            // Rotate bitmap if needed based on angle
-            val matrix = android.graphics.Matrix()
-            matrix.postRotate(angle.toFloat())
-            matrix.postScale(-1f, 1f)
-            val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            val bitmap = if (mUsingBitmap1) mReusableBitmap2 else mReusableBitmap1
+            if (bitmap == null) return
 
+            mYuvToRgbConverter?.convert(nv21, width, height, bitmap)
+            mUsingBitmap1 = !mUsingBitmap1
             runOnUiThread {
-                mSurfaceView?.setFrame(rotatedBitmap)
+                mSurfaceView?.setFrame(bitmap, angle)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error rendering frame", e)
@@ -129,38 +161,49 @@ open class EnrollActivity : FaceBaseActivity() {
             }
 
             override fun onEnrollmentHelp(helpMessageId: Int, charSequence: CharSequence?) {
-                val qualityCode = VendorCodeMessages.resolveFaceQualityVendorCode(
-                    helpMessageId, charSequence
-                )
-                val stringRes = qualityCode?.let {
-                    VendorCodeMessages.stringResForFaceQualityVendor(it)
-                }
-                runOnUiThread {
-                    if (stringRes != null) {
-                        mEnrollVendorMessage?.setText(stringRes)
-                    } else {
-                        // KEEP / unknown vendor codes shouldn't pollute the hint.
-                        mEnrollVendorMessage?.text = ""
+                if (helpMessageId < 1000) {
+                    runOnUiThread {
+                        if (!charSequence.isNullOrEmpty()) {
+                            mEnrollVendorMessage?.text = charSequence
+                        } else {
+                            mEnrollVendorMessage?.text = ""
+                        }
+                    }
+                } else {
+                    val vendorCode = helpMessageId - 1000
+                    val stringRes = VendorCodeMessages.stringResForFaceQualityVendor(vendorCode)
+                    runOnUiThread {
+                        if (stringRes != null) {
+                            mEnrollVendorMessage?.setText(stringRes)
+                        } else if (!charSequence.isNullOrEmpty()) {
+                            mEnrollVendorMessage?.text = charSequence
+                        } else {
+                            // KEEP / unknown vendor codes shouldn't pollute the hint.
+                            mEnrollVendorMessage?.text = ""
+                        }
                     }
                 }
             }
 
             override fun onEnrollmentError(errorMessageId: Int, charSequence: CharSequence?) {
-                val cameraVendorCode = VendorCodeMessages.resolveCameraVendorCode(errorMessageId, charSequence)
-                if (cameraVendorCode == null) {
-                    runOnUiThread {
-                        // Keep enrollment UI stable for non-camera vendor failures reported by HAL.
-                        mEnrollVendorMessage?.text = ""
-                    }
-                    Log.i(TAG, "Ignoring non-camera enrollment error in UI: frameworkId=$errorMessageId")
-                    return
-                }
-
                 if (!mIsActivityPaused) {
                     val intent = Intent()
                     intent.setClass(this@EnrollActivity, TryAgainActivity::class.java)
-                    intent.putExtra(Constants.EXTRA_KEY_ENROLL_CAMERA_VENDOR_CODE, cameraVendorCode)
-                    Log.i(TAG, "Enrollment camera-related error: halVendorCode=$cameraVendorCode frameworkId=$errorMessageId")
+
+                    if (errorMessageId >= 1000) {
+                        val vendorCode = errorMessageId - 1000
+                        if (vendorCode in 50..58) {
+                            intent.putExtra(Constants.EXTRA_KEY_ENROLL_CAMERA_VENDOR_CODE, vendorCode)
+                        } else if (!charSequence.isNullOrEmpty()) {
+                            intent.putExtra("error_message", charSequence.toString())
+                        }
+                    } else {
+                        if (!charSequence.isNullOrEmpty()) {
+                            intent.putExtra("error_message", charSequence.toString())
+                        }
+                    }
+
+                    Log.i(TAG, "Enrollment error: frameworkId=$errorMessageId message=$charSequence")
                     if (errorMessageId != Constants.MSG_UNLOCK_FAILED) {
                         parseIntent(intent)
                     } else {
@@ -171,6 +214,7 @@ open class EnrollActivity : FaceBaseActivity() {
                 finish()
             }
         }
+
 
     override fun onCreate(bundle: Bundle?) {
         ThemeHelper.applyTheme(this)
@@ -183,6 +227,8 @@ open class EnrollActivity : FaceBaseActivity() {
         getLayout().setDescriptionText(R.string.face_enroll_description)
         mSurfaceView = findViewById(R.id.camera_surface)
         mEnrollVendorMessage = findViewById(R.id.face_vendor_message)
+
+        mYuvToRgbConverter = YuvToRgbConverter(this)
 
         // Bind to the HAL's IVisionService once
         bindVisionService()
@@ -233,6 +279,13 @@ open class EnrollActivity : FaceBaseActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mBackgroundHandlerThread.quitSafely()
+        mYuvToRgbConverter?.destroy()
+        mYuvToRgbConverter = null
+        mReusableBitmap1?.recycle()
+        mReusableBitmap1 = null
+        mReusableBitmap2?.recycle()
+        mReusableBitmap2 = null
         Log.i(TAG, "onDestroy")
     }
 

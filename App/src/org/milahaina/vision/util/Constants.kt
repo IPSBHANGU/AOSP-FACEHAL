@@ -50,5 +50,4 @@ object Constants {
     const val MSG_CAMERA_SESSION_FAILED = 56
     const val MSG_CAMERA_REQUEST_FAILED = 57
     const val MSG_CAMERA_STREAMING_FAILED = 58
-    const val MSG_REENROLLMENT_REQUIRED = 1059
 }

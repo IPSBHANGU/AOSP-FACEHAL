@@ -4,7 +4,6 @@
     package="org.milahaina.vision">
 
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.MANAGE_BIOMETRIC" />
@@ -39,14 +38,6 @@
             android:launchMode="standard"
             android:screenOrientation="portrait"
             android:theme="@style/SudThemeGlifV4" />
-
-        <receiver
-            android:name=".receiver.ReEnrollmentReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
 
     </application>
 </manifest>

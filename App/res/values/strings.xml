@@ -29,7 +29,6 @@
     <string name="unlock_failed_face_rotated_left">Tilt head right</string>
     <string name="unlock_failed_face_rotated_right">Tilt head left</string>
     <string name="unlock_failed_face_not_found">Looking for your face\u2026</string>
-    <string name="unlock_reenroll_required">Face Unlock update requires you to re-enroll your face.</string>
 
     <!-- Camera pipeline errors (HAL vendor codes 50–58, FaceEngine.h) -->
     <string name="camera_error_no_device">Camera is not ready. Wait a moment, check that another app isn’t using the camera, then try again.</string>

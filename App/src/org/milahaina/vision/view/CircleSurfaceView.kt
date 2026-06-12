@@ -70,8 +70,11 @@ class CircleSurfaceView : View {
         }
     }
 
-    fun setFrame(bitmap: Bitmap) {
+    private var mRotationAngle = 0
+
+    fun setFrame(bitmap: Bitmap, rotationAngle: Int = 0) {
         mFrameBitmap = bitmap
+        mRotationAngle = rotationAngle
         postInvalidate()
     }
 
@@ -105,9 +108,22 @@ class CircleSurfaceView : View {
         
         // Draw the camera frame bitmap if available
         mFrameBitmap?.let {
-            val src = android.graphics.Rect(0, 0, it.width, it.height)
-            val dst = RectF(cx - min, cy - min, cx + min, cy + min)
+            canvas.save()
+            canvas.translate(cx, cy)
+            canvas.scale(-1f, 1f)
+            canvas.rotate(mRotationAngle.toFloat())
+
+            // Calculate center-cropped source bounds to eliminate stretching
+            val src = if (it.width > it.height) {
+                val diff = it.width - it.height
+                android.graphics.Rect(diff / 2, 0, diff / 2 + it.height, it.height)
+            } else {
+                val diff = it.height - it.width
+                android.graphics.Rect(0, diff / 2, it.width, diff / 2 + it.width)
+            }
+            val dst = RectF(-min, -min, min, min)
             canvas.drawBitmap(it, src, dst, null)
+            canvas.restore()
         }
         
         canvas.restore()
