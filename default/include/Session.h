@@ -31,6 +31,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <chrono>
 
 namespace org {
 namespace milahaina {
@@ -105,6 +106,7 @@ private:
     uint64_t mCurrentChallenge;
     OperationReason mCurrentOperationReason;
     DisplayState mCurrentDisplayState;
+    std::chrono::steady_clock::time_point mAuthStartTime;
 
     int onCameraFrame(const std::vector<uint8_t>& frame, int width, int height, int angle);
     void postCallback(std::function<void()> task);

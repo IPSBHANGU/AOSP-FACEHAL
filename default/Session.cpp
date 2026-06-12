@@ -369,6 +369,7 @@ ScopedAStatus Session::authenticate(int64_t operationId,
     mCurrentChallenge = operationId;
     mEngine.startOperation();
     mIsAuthenticating = true;
+    mAuthStartTime = std::chrono::steady_clock::now();
 
     // Infer OperationReason if not explicitly set via authenticateWithContext
     if (mCurrentOperationReason == OperationReason::UNKNOWN) {
@@ -521,15 +522,27 @@ ScopedAStatus Session::detectInteractionWithContext(
 }
 
 ScopedAStatus Session::onContextChanged(const OperationContext &context) {
+
+  if (context.reason != OperationReason::UNKNOWN) {
+    mCurrentOperationReason = context.reason;
+  }
+
   LOG(INFO) << "Session::onContextChanged: reason=" << (int)context.reason
             << ", displayState=" << (int)context.displayState;
 
   if (mIsAuthenticating &&
       mCurrentOperationReason == OperationReason::BIOMETRIC_PROMPT &&
       context.reason != OperationReason::BIOMETRIC_PROMPT) {
-    LOG(INFO) << "Session::onContextChanged: Biometric prompt is no longer active, cancelling face auth.";
-    cancel();
-    return ScopedAStatus::ok();
+    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - mAuthStartTime).count();
+    if (elapsedMs < 1000) {
+      LOG(INFO) << "Session::onContextChanged: Ignoring prompt cancellation check due to session startup grace period (" << elapsedMs << "ms)";
+    } else {
+      LOG(INFO) << "Session::onContextChanged: Biometric prompt is no longer "
+                   "active, cancelling face auth.";
+      cancel();
+      return ScopedAStatus::ok();
+    }
   }
 
   mCurrentDisplayState = context.displayState;
