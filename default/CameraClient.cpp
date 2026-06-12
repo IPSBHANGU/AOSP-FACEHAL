@@ -27,6 +27,10 @@ int CameraClient::lastStartFailureVendorCode() const {
     return mBackend ? mBackend->lastStartFailureVendorCode() : 0;
 }
 
+bool CameraClient::getOptimalResolution(int &width, int &height) const {
+    return mBackend ? mBackend->getOptimalResolution(width, height) : false;
+}
+
 bool CameraClient::start(FrameCallback cb) {
     if (mBackend) {
         return mBackend->start(cb);

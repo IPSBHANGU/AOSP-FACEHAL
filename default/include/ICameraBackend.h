@@ -20,6 +20,11 @@ public:
 
     /** VendorCode::* set when last start() returned false; 0 if unknown. */
     virtual int lastStartFailureVendorCode() const { return 0; }
+
+    virtual bool getOptimalResolution(int &width, int &height) const {
+        (void)width; (void)height;
+        return false;
+    }
 };
 
 }  // namespace hal

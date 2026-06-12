@@ -27,6 +27,8 @@ public:
     /** After failed start(): VendorCode::CAMERA_* from FaceEngine.h */
     int lastStartFailureVendorCode() const;
 
+    bool getOptimalResolution(int &width, int &height) const;
+
     static void warmUpAtHalStart();
 
 private:

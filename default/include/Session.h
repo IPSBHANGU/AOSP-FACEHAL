@@ -30,6 +30,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 namespace org {
 namespace milahaina {
@@ -96,9 +97,10 @@ private:
     std::shared_ptr<CryptoClient> mCryptoClient;
     std::shared_ptr<CameraClient> mCameraClient;
 
-    bool mIsAuthenticating;
-    bool mIsEnrolling;
-    bool mIsDetectingInteraction;
+    std::atomic<bool> mIsAuthenticating;
+    std::atomic<bool> mIsEnrolling;
+    std::atomic<bool> mIsDetectingInteraction;
+    std::atomic<bool> mProcessingFrame{false};
     int32_t mEnrollRemaining;
     uint64_t mCurrentChallenge;
     OperationReason mCurrentOperationReason;

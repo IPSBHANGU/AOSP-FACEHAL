@@ -113,104 +113,187 @@ void Session::cancel() {
   mCameraClient->stop();
 }
 
+namespace {
+
+void downscaleNv21(const std::vector<uint8_t> &src, int srcW, int srcH,
+                   std::vector<uint8_t> &dst, int dstW, int dstH) {
+  dst.resize(dstW * dstH * 3 / 2);
+  const uint8_t *srcY = src.data();
+  const uint8_t *srcUV = src.data() + srcW * srcH;
+  uint8_t *dstY = dst.data();
+  uint8_t *dstUV = dst.data() + dstW * dstH;
+
+  float scaleX = (float)srcW / dstW;
+  float scaleY = (float)srcH / dstH;
+
+  // Downscale Y plane
+  for (int y = 0; y < dstH; ++y) {
+    int srcY_row = (int)(y * scaleY) * srcW;
+    int dstY_row = y * dstW;
+    for (int x = 0; x < dstW; ++x) {
+      dstY[dstY_row + x] = srcY[srcY_row + (int)(x * scaleX)];
+    }
+  }
+
+  // Downscale UV plane
+  int dstChromaH = dstH / 2;
+  int dstChromaW = dstW / 2;
+  for (int y = 0; y < dstChromaH; ++y) {
+    int srcUV_row = (int)(y * scaleY) * srcW;
+    int dstUV_row = y * dstW;
+    for (int x = 0; x < dstChromaW; ++x) {
+      int srcX = (int)(x * scaleX);
+      dstUV[dstUV_row + 2 * x] = srcUV[srcUV_row + 2 * srcX];
+      dstUV[dstUV_row + 2 * x + 1] = srcUV[srcUV_row + 2 * srcX + 1];
+    }
+  }
+}
+
+} // namespace
+
 int Session::onCameraFrame(const std::vector<uint8_t> &frame, int width,
                            int height, int angle) {
   if (mEngine.isCancelled()) {
-    LOG(INFO) << "onCameraFrame: operation is cancelled, skipping frame processing";
+    LOG(INFO)
+        << "onCameraFrame: operation is cancelled, skipping frame processing";
     return -1;
   }
-  LOG(INFO) << "onCameraFrame: received frame of size " << frame.size() << " ("
-            << width << "x" << height << ") angle=" << angle
-            << " mIsEnrolling=" << mIsEnrolling
-            << ", mIsAuthenticating=" << mIsAuthenticating
-            << ", mIsDetectingInteraction=" << mIsDetectingInteraction;
-  if (mIsAuthenticating) {
-    float score = 0.0f;
-    int32_t matchedFaceId = -1;
-    int res = mEngine.authenticate(frame, width, height, mUserId, score,
-                                   matchedFaceId);
-    LOG(INFO) << "onCameraFrame: authenticate res=" << res << " score=" << score
-              << " faceId=" << matchedFaceId;
-    if (res == 0) {
-      mIsAuthenticating = false;
-      mCurrentOperationReason = OperationReason::UNKNOWN;
-      mCameraClient->stop();
-      HardwareAuthToken hat;
-      hat.challenge = mCurrentChallenge;
-      hat.userId = mUserId;
-      hat.authenticatorId = 0;
-      hat.timestamp = aidl::android::hardware::keymaster::Timestamp{
-          .milliSeconds = 0L
-      };
-      postCallback([cb = mCb, matchedFaceId, hat]() {
+
+  // Check if we are already processing a frame. If so, drop this frame immediately.
+  // This keeps the camera pipeline flowing at 30 FPS and prevents preview jitter.
+  bool expected = false;
+  if (!mProcessingFrame.compare_exchange_strong(expected, true)) {
+    return -1;
+  }
+
+  const std::vector<uint8_t> *processingFrame = &frame;
+  int processingWidth = width;
+  int processingHeight = height;
+  std::vector<uint8_t> downscaledFrame;
+
+  int optW = 1280;
+  int optH = 720;
+  if (!mCameraClient || !mCameraClient->getOptimalResolution(optW, optH)) {
+    optW = 1280;
+    optH = 720;
+  }
+  int maxDim = std::max(optW, optH);
+  int minDim = std::min(optW, optH);
+
+  if (width > maxDim || height > maxDim) {
+    int targetW = width;
+    int targetH = height;
+    double aspectRatio = (double)width / height;
+    if (width > height) {
+      targetW = maxDim;
+      targetH = (int)(maxDim / aspectRatio);
+      if (targetH > minDim) {
+        targetH = minDim;
+        targetW = (int)(minDim * aspectRatio);
+      }
+    } else {
+      targetH = maxDim;
+      targetW = (int)(maxDim * aspectRatio);
+      if (targetW > minDim) {
+        targetW = minDim;
+        targetH = (int)(minDim / aspectRatio);
+      }
+    }
+    processingWidth = targetW & ~1;
+    processingHeight = targetH & ~1;
+
+    downscaleNv21(frame, width, height, downscaledFrame, processingWidth, processingHeight);
+    processingFrame = &downscaledFrame;
+  }
+
+  // Copy frame data before offloading to background thread
+  std::vector<uint8_t> frameCopy = *processingFrame;
+
+  // Grab self shared pointer to keep Session alive
+  std::shared_ptr<Session> self = ref<Session>();
+
+  std::thread([self, frameCopy = std::move(frameCopy), processingWidth, processingHeight, angle]() {
+    if (self->mEngine.isCancelled()) {
+      self->mProcessingFrame = false;
+      return;
+    }
+
+    if (self->mIsAuthenticating) {
+      float score = 0.0f;
+      int32_t matchedFaceId = -1;
+      int res = self->mEngine.authenticate(frameCopy, processingWidth, processingHeight, self->mUserId, score,
+                                     matchedFaceId);
+      LOG(INFO) << "onCameraFrame async: authenticate res=" << res << " score=" << score
+                << " faceId=" << matchedFaceId;
+      if (res == 0) {
+        self->mIsAuthenticating = false;
+        self->mCurrentOperationReason = OperationReason::UNKNOWN;
+        self->mCameraClient->stop();
+        HardwareAuthToken hat;
+        hat.challenge = self->mCurrentChallenge;
+        hat.userId = self->mUserId;
+        hat.authenticatorId = 0;
+        hat.timestamp = aidl::android::hardware::keymaster::Timestamp{
+            .milliSeconds = 0L
+        };
+        self->postCallback([cb = self->mCb, matchedFaceId, hat]() {
           cb->onAuthenticationSucceeded(matchedFaceId, hat);
-      });
-    } else if (res > 0) {
-      // No match - only call onAuthenticationFailed for actual match failure or spoof/liveness reject.
-      // Acquisition/scan warning codes (like FACE_NOT_FOUND) should not register as match failures.
-      if (res == 1 || res == VendorCode::FAILED) {
-        postCallback([cb = mCb]() {
-            cb->onAuthenticationFailed();
+        });
+      } else if (res > 0) {
+        if (res == 1 || res == VendorCode::FAILED) {
+          self->postCallback([cb = self->mCb]() { cb->onAuthenticationFailed(); });
+        } else {
+          int32_t vendorCode = 0;
+          AcquiredInfo info = AcquiredInfoMapper::mapVendorCode(res, vendorCode);
+          AuthenticationFrame authFrame;
+          authFrame.data.acquiredInfo = info;
+          authFrame.data.vendorCode = vendorCode;
+          self->postCallback(
+              [cb = self->mCb, authFrame]() { cb->onAuthenticationFrame(authFrame); });
+        }
+      }
+    } else if (self->mIsDetectingInteraction) {
+      int res = self->mEngine.analyzeFaceQuality(frameCopy, processingWidth, processingHeight);
+      LOG(INFO) << "onCameraFrame async: detectInteraction res=" << res;
+      if (res == VendorCode::FACE_OK) {
+        self->mIsDetectingInteraction = false;
+        self->mCameraClient->stop();
+        self->postCallback([cb = self->mCb]() { cb->onInteractionDetected(); });
+      }
+    } else if (self->mIsEnrolling) {
+      int32_t outFaceId = 0;
+      int res = self->mEngine.enroll(self->mUserId, frameCopy, processingWidth, processingHeight, outFaceId);
+      int progress = self->mEngine.getEnrollmentProgress();
+      int totalFrames = FaceEngine::ENROLL_REQUIRED_GOOD_FRAMES;
+      int remaining = totalFrames - (self->mEngine.mEnrollFrameCount);
+
+      LOG(INFO) << "onCameraFrame async: enroll result=" << res
+                << " progress=" << progress << "%";
+
+      if (res == VendorCode::FACE_OK) {
+        self->mIsEnrolling = false;
+        self->mCameraClient->stop();
+        self->postCallback(
+            [cb = self->mCb, outFaceId]() { cb->onEnrollmentProgress(outFaceId, 0); });
+      } else if (res == VendorCode::KEEP) {
+        self->postCallback([cb = self->mCb, outFaceId, remaining]() {
+          cb->onEnrollmentProgress(outFaceId, remaining);
         });
       } else {
         int32_t vendorCode = 0;
         AcquiredInfo info = AcquiredInfoMapper::mapVendorCode(res, vendorCode);
-        AuthenticationFrame authFrame;
-        authFrame.data.acquiredInfo = info;
-        authFrame.data.vendorCode = vendorCode;
-        postCallback([cb = mCb, authFrame]() {
-            cb->onAuthenticationFrame(authFrame);
-        });
+        EnrollmentFrame enrollFrame;
+        enrollFrame.data.acquiredInfo = info;
+        enrollFrame.data.vendorCode = vendorCode;
+        self->postCallback(
+            [cb = self->mCb, enrollFrame]() { cb->onEnrollmentFrame(enrollFrame); });
       }
     }
-    return res;
-  } else if (mIsDetectingInteraction) {
-    int res = mEngine.analyzeFaceQuality(frame, width, height);
-    LOG(INFO) << "onCameraFrame: detectInteraction res=" << res;
-    if (res == VendorCode::FACE_OK) {
-      mIsDetectingInteraction = false;
-      mCameraClient->stop();
-      postCallback([cb = mCb]() {
-          cb->onInteractionDetected();
-      });
-    }
-    return res;
-  } else if (mIsEnrolling) {
-    int32_t outFaceId = 0;
-    int res = mEngine.enroll(mUserId, frame, width, height, outFaceId);
-    int progress = mEngine.getEnrollmentProgress();
-    int totalFrames = FaceEngine::ENROLL_REQUIRED_GOOD_FRAMES;
-    int remaining = totalFrames - (mEngine.mEnrollFrameCount);
 
-    LOG(INFO) << "onCameraFrame: enroll result=" << res
-              << " progress=" << progress << "%";
+    self->mProcessingFrame = false;
+  }).detach();
 
-    if (res == VendorCode::FACE_OK) {
-      // Enrollment finished successfully
-      mIsEnrolling = false;
-      mCameraClient->stop();
-      postCallback([cb = mCb, outFaceId]() {
-          cb->onEnrollmentProgress(outFaceId, 0);
-      });
-    } else if (res == VendorCode::KEEP) {
-      // Good frame, need more. Report progress.
-      postCallback([cb = mCb, outFaceId, remaining]() {
-          cb->onEnrollmentProgress(outFaceId, remaining);
-      });
-    } else {
-      // Bad quality or error — report mapped AcquiredInfo for UI feedback
-      int32_t vendorCode = 0;
-      AcquiredInfo info = AcquiredInfoMapper::mapVendorCode(res, vendorCode);
-      EnrollmentFrame enrollFrame;
-      enrollFrame.data.acquiredInfo = info;
-      enrollFrame.data.vendorCode = vendorCode;
-      postCallback([cb = mCb, enrollFrame]() {
-          cb->onEnrollmentFrame(enrollFrame);
-      });
-    }
-    return res;
-  }
-  return -1;
+  return 0;
 }
 
 ScopedAStatus Session::generateChallenge(void) {

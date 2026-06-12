@@ -197,6 +197,57 @@ bool GetOptimalSupportedResolution(ACameraManager* mgr, const std::string& camer
     return false;
 }
 
+bool GetMaxSupportedResolution(ACameraManager *mgr,
+                               const std::string &cameraId, int &outWidth,
+                               int &outHeight) {
+  ACameraMetadata *chars = nullptr;
+  camera_status_t cs =
+      ACameraManager_getCameraCharacteristics(mgr, cameraId.c_str(), &chars);
+  if (cs != ACAMERA_OK || chars == nullptr) {
+    ALOGE("Camera2NdkBackend: failed to get characteristics for camera %s",
+          cameraId.c_str());
+    return false;
+  }
+
+  ACameraMetadata_const_entry entry{};
+  cs = ACameraMetadata_getConstEntry(
+      chars, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &entry);
+  if (cs != ACAMERA_OK) {
+    ALOGE("Camera2NdkBackend: failed to get stream configurations");
+    ACameraMetadata_free(chars);
+    return false;
+  }
+
+  int absoluteMaxW = 0;
+  int absoluteMaxH = 0;
+  long long maxArea = 0;
+
+  for (uint32_t i = 0; i < entry.count; i += 4) {
+    int32_t format = entry.data.i32[i + 0];
+    int32_t width = entry.data.i32[i + 1];
+    int32_t height = entry.data.i32[i + 2];
+    int32_t isInput = entry.data.i32[i + 3];
+
+    if (format == AIMAGE_FORMAT_YUV_420_888 && isInput == 0) {
+      long long area = static_cast<long long>(width) * height;
+      if (area > maxArea) {
+        maxArea = area;
+        absoluteMaxW = width;
+        absoluteMaxH = height;
+      }
+    }
+  }
+
+  ACameraMetadata_free(chars);
+
+  if (absoluteMaxW > 0 && absoluteMaxH > 0) {
+    outWidth = absoluteMaxW;
+    outHeight = absoluteMaxH;
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 namespace {
@@ -305,6 +356,19 @@ int Camera2NdkBackend::lastStartFailureVendorCode() const {
     return mLastStartFailure;
 }
 
+bool Camera2NdkBackend::getOptimalResolution(int &width, int &height) const {
+  ACameraManager *mgr = ACameraManager_create();
+  if (!mgr) return false;
+  std::string id;
+  if (!SelectFrontCameraId(mgr, id) || id.empty()) {
+    ACameraManager_delete(mgr);
+    return false;
+  }
+  bool ret = GetOptimalSupportedResolution(mgr, id, width, height);
+  ACameraManager_delete(mgr);
+  return ret;
+}
+
 bool Camera2NdkBackend::start(FrameCallback cb) {
     std::unique_lock<std::mutex> lock(mLock);
     if (mIsStopping) {
@@ -353,15 +417,15 @@ bool Camera2NdkBackend::start(FrameCallback cb) {
 
     int maxW = 640;
     int maxH = 480;
-    if (GetOptimalSupportedResolution(mMgr, mCameraId, maxW, maxH)) {
+    if (GetMaxSupportedResolution(mMgr, mCameraId, maxW, maxH)) {
         mWidth = maxW;
         mHeight = maxH;
-        ALOGI("Camera2NdkBackend: dynamically selected optimal resolution %dx%d for camera %s",
+        ALOGI("Camera2NdkBackend: dynamically selected max supported resolution %dx%d for camera %s",
               mWidth, mHeight, mCameraId.c_str());
     } else {
         mWidth = 640;
         mHeight = 480;
-        ALOGW("Camera2NdkBackend: failed to determine optimal resolution, using fallback 640x480");
+        ALOGW("Camera2NdkBackend: failed to determine max supported resolution, using fallback 640x480");
     }
 
     mDevCb = {};

@@ -33,6 +33,8 @@ public:
 
     int lastStartFailureVendorCode() const override;
 
+    bool getOptimalResolution(int &width, int &height) const override;
+
     /** Probe cameras once at HAL process start; caches id so enroll/auth opens immediately. */
     static void warmUpAtHalStart();
 
